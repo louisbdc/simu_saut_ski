@@ -478,6 +478,7 @@ function frameLift(ride: LiftRide, sinceHandover: number, elapsed: number): void
   rig.updateScenic({ focus, phase: state.phase, rideProgress: state.rideProgress }, elapsed)
   stage.controls.update()
   culler?.update(stage.camera.position, focus)
+  skier.setViewDistance(stage.camera.position.distanceTo(focus))
   trackLight(stage, focus)
   stage.renderer.render(stage.scene, stage.camera)
 
@@ -516,6 +517,7 @@ function frameDescent(elapsed: number): void {
   })
   stage.controls.update()
   culler?.update(stage.camera.position, { x: viewed.x, y: viewed.y + SUBJECT_HEIGHT, z: 0 })
+  skier.setViewDistance(stage.camera.position.distanceTo(skier.object.position))
   trackLight(stage, new THREE.Vector3(viewed.x, viewed.y, 0))
   stage.renderer.render(stage.scene, stage.camera)
 
@@ -586,3 +588,14 @@ startApp({
 })
 idle.wake(performance.now(), STARTUP_WAKE_MS)
 requestAnimationFrame(frame)
+// DEBUG-TEMP
+;(window as unknown as Record<string, unknown>).__seek = (t: number, dx = 0, dy = 3, dz = 9) => {
+  playback = { ...playback, time: (liftRide?.plan.handover ?? 0) + t, playing: false }
+  setCamera('free')
+  if (!liftRide) return null
+  const state = epilogueAt(liftRide.plan, t)
+  stage.controls.target.set(state.x, state.y + 1, state.z)
+  stage.camera.position.set(state.x + dx, state.y + 1 + dy, state.z + dz)
+  wake()
+  return { end: liftRide.plan.approachEnd, lead: liftRide.plan.leadLength / (liftRide.plan.entrySpeed || 1), state }
+}

@@ -14,6 +14,7 @@ import {
   solveJoints,
   type Joints,
 } from './skeleton'
+import { isFarView } from './skierDetail'
 import { loadModelBody } from './skierModel'
 import {
   SKI_NAME,
@@ -79,6 +80,8 @@ export interface Skier {
    * avant toute pose. Sert à lancer la chute articulée depuis l'état exact du skieur.
    */
   readonly worldPoints: () => RagdollPoints | null
+  /** Indique la distance de la caméra, en mètres : de loin, le mannequin cède la place au corps simplifié. */
+  readonly setViewDistance: (distance: number) => void
   /** Skis déchaussés lors d'une chute : à ajouter à la scène, ils vivent leur vie sur la piste. */
   readonly looseSkis: THREE.Group
   /** Place le skieur et règle sa posture et l'avancement de sa figure pour cet instant. */
@@ -152,18 +155,10 @@ function jointsFromPoints(points: RagdollPoints): Joints {
   }
 }
 
-function disposeBody(body: SkierBody): void {
-  body.object.traverse((object) => {
-    if (!(object instanceof THREE.Mesh)) return
-    object.geometry.dispose()
-    const materials: THREE.Material[] = Array.isArray(object.material) ? object.material : [object.material]
-    materials.forEach((material) => material.dispose())
-  })
-}
-
 /**
- * Crée le skieur. Il apparaît d'abord avec un corps simplifié, remplacé par le mannequin dès que
- * celui-ci est chargé ; si le chargement échoue, le corps simplifié reste en place.
+ * Crée le skieur. Il apparaît d'abord avec un corps simplifié ; le mannequin le remplace de près dès
+ * qu'il est chargé, et le corps simplifié reprend sa place quand la caméra s'éloigne. Si le
+ * chargement échoue, le corps simplifié reste seul.
  */
 export function createSkier(): Skier {
   const root = new THREE.Group()
@@ -173,23 +168,30 @@ export function createSkier(): Skier {
   const poles = SIDES.map(() => createPole())
   const feet = SIDES.map(createFoot)
   rig.add(...feet, ...poles)
-  let body = createCapsuleBody()
-  rig.add(body.object)
+  const simple = createCapsuleBody()
+  rig.add(simple.object)
+  let detailed: SkierBody | null = null
+  let farView = false
+  /** Corps affiché : le mannequin de près, le corps simplifié de loin ou tant que le mannequin manque. */
+  const shownBody = (): SkierBody => (detailed && !farView ? detailed : simple)
+  const showBody = (): void => {
+    simple.object.visible = shownBody() === simple
+    if (detailed) detailed.object.visible = shownBody() === detailed
+  }
   const outfit = createOutfit()
   rig.add(outfit.object)
   /** Met le corps et ses vêtements dans la même posture ; renvoie la position des mains. */
   const dress = (joints: Joints): BodyPoints => {
-    const points = body.apply(joints, rig)
+    const points = shownBody().apply(joints, rig)
     outfit.apply(points)
     return points
   }
 
   loadModelBody()
     .then((model) => {
-      rig.remove(body.object)
-      disposeBody(body)
-      body = model
+      detailed = model
       rig.add(model.object)
+      showBody()
     })
     .catch((error: unknown) => {
       const reason = error instanceof Error ? error.message : String(error)
@@ -266,6 +268,12 @@ export function createSkier(): Skier {
   return {
     object: root,
     looseSkis,
+    setViewDistance: (distance: number): void => {
+      const far = isFarView(farView, distance)
+      if (far === farView) return
+      farView = far
+      showBody()
+    },
     worldPoints: (): RagdollPoints | null => {
       if (!lastJoints) return null
       const local = pointsFromJoints(lastJoints)

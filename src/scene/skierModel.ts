@@ -64,7 +64,8 @@ function dress(mesh: THREE.SkinnedMesh): void {
   }
   geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3))
   mesh.material = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.8 })
-  mesh.castShadow = true
+  // Pas d'ombre propre : les vêtements, le casque et les skis qui le recouvrent en projettent déjà une,
+  // et le mannequin n'aurait fait qu'être dessiné une seconde fois pour rien.
   // Le maillage suit ses os bien au-delà de sa boîte englobante de repos.
   mesh.frustumCulled = false
 }
