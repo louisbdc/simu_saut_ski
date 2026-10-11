@@ -1,12 +1,19 @@
 import type { Sample, SimulationResult } from '../physics/types'
 
 const MS_TO_KMH = 3.6
-const PADDING = { left: 38, right: 8, top: 10, bottom: 18 }
-const GROUND_COLOR = '#9fd0ff'
-const AIR_COLOR = '#ff5a1f'
+const PADDING = { left: 38, right: 8, top: 10, bottom: 6 }
+
+/** Couleur de l'habillage, lue sur la feuille de style pour que la courbe suive le reste du site. */
+function themeColor(variable: string, fallback: string): string {
+  return getComputedStyle(document.documentElement).getPropertyValue(variable).trim() || fallback
+}
+
+const GROUND_COLOR = '#8fc7ff'
+const AIR_COLOR = themeColor('--pole', '#ff7a1a')
 const TERRAIN_FILL = 'rgba(157, 185, 214, 0.2)'
-const AXIS_COLOR = '#9db9d6'
-const CURSOR_COLOR = '#f4f8fc'
+const AXIS_COLOR = themeColor('--glacier', '#9db9d6')
+const CURSOR_COLOR = themeColor('--snow', '#f4f8fc')
+const AXIS_FONT = "700 12px 'Nunito', system-ui, sans-serif"
 const SPEED_HEADROOM = 1.12
 
 export interface SpeedChart {
@@ -71,16 +78,13 @@ function drawBackground(
   strokeSpeed(context, samples, (sample) => [px(sample.x), speedY(sample.speed)])
 
   context.fillStyle = AXIS_COLOR
-  context.font = "12px 'Barlow', system-ui, sans-serif"
+  context.font = AXIS_FONT
   context.textAlign = 'right'
   context.textBaseline = 'middle'
   const topSpeed = Math.floor((maxSpeed * MS_TO_KMH) / 10) * 10
   for (const tick of [0, topSpeed / 2, topSpeed]) {
     context.fillText(`${tick}`, PADDING.left - 6, speedY(tick / MS_TO_KMH))
   }
-  context.textAlign = 'left'
-  context.textBaseline = 'alphabetic'
-  context.fillText('Vitesse en km/h le long de la ligne, en orange pendant les vols', PADDING.left, size.height - 3)
   return px
 }
 

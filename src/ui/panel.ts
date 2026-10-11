@@ -1,15 +1,5 @@
-import GUI from 'lil-gui'
-import {
-  ENVIRONMENT_LIMITS,
-  KICKER_LIMITS,
-  MAX_KICKERS,
-  NEW_KICKER,
-  NEW_TRICK,
-  RIDER_LIMITS,
-  sanitizeLine,
-  type Limit,
-} from '../physics/constants'
-import { DEFAULT_MODEL_ID, KICKER_MODELS, SCENARIOS, getKickerModel } from '../physics/presets'
+import { ENVIRONMENT_LIMITS, KICKER_LIMITS, MAX_KICKERS, RIDER_LIMITS, sanitizeLine, type Limit } from '../physics/constants'
+import { KICKER_MODELS, SCENARIOS } from '../physics/presets'
 import type { EnvironmentConfig, KickerConfig, LineConfig, RiderConfig } from '../physics/types'
 import {
   CUSTOM_TRICK_LIMITS,
@@ -19,18 +9,21 @@ import {
   customTrickId,
   parseCustomTrick,
   type CustomTrickSettings,
+  type TrickFamily,
 } from '../scene/tricks'
-
-type Mutable<T> = { -readonly [K in keyof T]: T[K] }
-
-/** Copie modifiable de la config, que lil-gui édite en place avant qu'on en émette une copie propre. */
-interface Draft {
-  kickers: Mutable<KickerConfig>[]
-  tricks: string[]
-  startSwitch: boolean
-  rider: Mutable<RiderConfig>
-  environment: Mutable<EnvironmentConfig>
-}
+import { el } from './dom'
+import {
+  modelOf,
+  withEnvironmentValue,
+  withKickerValue,
+  withModel,
+  withNewKicker,
+  withRiderValue,
+  withStartSwitch,
+  withTrick,
+  withoutKicker,
+  type PanelState,
+} from './panelState'
 
 export interface PanelHandlers {
   readonly onChange: (config: LineConfig) => void
@@ -55,8 +48,8 @@ export interface Panel {
 }
 
 const KICKER_LABELS: Readonly<Record<keyof KickerConfig, string>> = {
-  inrunAngleDeg: "Pente de l'élan (°)",
-  inrunLength: "Longueur de l'élan (m)",
+  inrunAngleDeg: 'Pente de l’élan (°)',
+  inrunLength: 'Longueur de l’élan (m)',
   flatLength: 'Plat avant le kick (m)',
   transitionRadius: 'Rayon de la courbe (m)',
   takeoffAngleDeg: 'Angle de sortie (°)',
@@ -71,8 +64,8 @@ const RIDER_LABELS: Readonly<Record<keyof RiderConfig, string>> = {
   mass: 'Masse du skieur (kg)',
   equipmentMass: 'Équipement (kg)',
   friction: 'Frottement neige',
-  dragArea: "Prise à l'air en glisse (m²)",
-  dragAreaAir: "Prise à l'air en vol (m²)",
+  dragArea: 'Prise à l’air en glisse (m²)',
+  dragAreaAir: 'Prise à l’air en vol (m²)',
   popSpeed: 'Pop à la lèvre (m/s, − = absorbé)',
   startSpeed: 'Vitesse au départ (m/s)',
 }
@@ -82,176 +75,216 @@ const ENVIRONMENT_LABELS: Readonly<Record<keyof EnvironmentConfig, string>> = {
   headwind: 'Vent de face (m/s)',
 }
 
-/** Réglages d'élan : une bosse qui en suit une autre les garde quand on change son gabarit. */
-const INRUN_KEYS = ['inrunAngleDeg', 'inrunLength', 'flatLength'] as const
+/** Réglages d'une bosse, rangés par partie de la bosse ; la première partie est ouverte d'office. */
+const KICKER_SECTIONS: readonly (readonly [title: string, keys: readonly (keyof KickerConfig)[]])[] = [
+  ['Élan', ['inrunAngleDeg', 'inrunLength', 'flatLength']],
+  ['Kick', ['transitionRadius', 'takeoffAngleDeg', 'kickerHeight']],
+  ['Table et réception', ['deckDrop', 'tableLength', 'landingAngleDeg', 'landingLength']],
+]
 
-const toOptions = (items: readonly { id: string; label: string }[]): Record<string, string> =>
-  Object.fromEntries(items.map((item) => [item.label, item.id]))
+const FAMILY_GROUPS: readonly (readonly [label: string, families: readonly TrickFamily[]])[] = [
+  ['Sauts droits et grabs', ['straight']],
+  ['Vrilles', ['spin']],
+  ['Saltos', ['backflip', 'frontflip']],
+  ['Désaxés', ['cork', 'rodeo', 'misty']],
+]
 
-const SCENARIO_OPTIONS = toOptions(SCENARIOS)
-const MODEL_OPTIONS = toOptions(KICKER_MODELS)
-/** Dernière entrée de la liste : ouvre les réglages d'une figure composée à la main. */
-const TRICK_OPTIONS = { ...toOptions(TRICKS), 'Figure perso…': CUSTOM_TRICK_PREFIX }
 const NEW_CUSTOM_TRICK: CustomTrickSettings = { flips: 1, spinDegrees: 0, grab: 'none' }
-const GRAB_OPTIONS = Object.fromEntries(GRABS.map((grab) => [grab === 'none' ? 'Aucun' : grab, grab]))
+const CUSTOM_LABEL = 'Figure perso…'
+const NO_GRAB_LABEL = 'Aucun'
+const DRAWER_OPEN = 'open'
 
-function toDraft(config: LineConfig): Draft {
-  return {
-    kickers: config.kickers.map((kicker) => ({ ...kicker })),
-    tricks: config.kickers.map((_, index) => config.tricks[index] ?? NEW_TRICK),
-    startSwitch: config.startSwitch,
-    rider: { ...config.rider },
-    environment: { ...config.environment },
+const option = (value: string, label: string, selected: boolean): HTMLOptionElement => {
+  const item = el('option', { text: label, attributes: { value } })
+  item.selected = selected
+  return item
+}
+
+const button = (text: string, onClick: () => void, className = ''): HTMLButtonElement => {
+  const item = el('button', { className, text, attributes: { type: 'button' } })
+  item.addEventListener('click', onClick)
+  return item
+}
+
+/** Curseur et champ chiffré liés : on règle à la main ou on tape la valeur exacte. */
+function slider(label: string, value: number, limit: Limit, onInput: (value: number) => void): HTMLElement {
+  const range = el('input', { attributes: { type: 'range', min: String(limit.min), max: String(limit.max), step: String(limit.step), 'aria-label': label } })
+  const exact = el('input', { attributes: { type: 'number', min: String(limit.min), max: String(limit.max), step: String(limit.step), 'aria-label': `${label}, valeur exacte` } })
+  range.value = exact.value = String(value)
+  const emit = (source: HTMLInputElement, mirror: HTMLInputElement): void => {
+    const typed = Number(source.value)
+    if (source.value === '' || !Number.isFinite(typed)) return
+    const bounded = Math.min(limit.max, Math.max(limit.min, typed))
+    mirror.value = String(bounded)
+    onInput(bounded)
   }
+  range.addEventListener('input', () => emit(range, exact))
+  exact.addEventListener('input', () => emit(exact, range))
+  return el('div', { className: 'slider' }, [el('span', { className: 'slider-name', text: label }), exact, range])
 }
 
-/** Réglages du gabarit pour la bosse `index` : la première les prend tous, les suivantes gardent leur élan. */
-function modelKicker(modelId: string, index: number, current: KickerConfig): Mutable<KickerConfig> {
-  const model = { ...getKickerModel(modelId).kicker }
-  if (index === 0) return model
-  return { ...model, ...Object.fromEntries(INRUN_KEYS.map((key) => [key, current[key]])) }
-}
-
-function addSliders<T extends object>(
-  folder: GUI,
-  values: T,
-  limits: Readonly<Record<keyof T, Limit>>,
-  labels: Readonly<Record<keyof T, string>>,
-  onChange: () => void,
-): void {
-  for (const key of Object.keys(labels) as (keyof T & string)[]) {
-    const { min, max, step } = limits[key]
-    folder.add(values, key, min, max, step).name(labels[key]).onChange(onChange)
-  }
-}
-
+/** Panneau de réglages de la piste libre : scénario, bosses en onglets, skieur et conditions. */
 export function createPanel(initial: PanelLine, handlers: PanelHandlers): Panel {
-  let draft = toDraft(initial.config)
-  let models = [...(initial.models ?? [])]
-  let scenario = initial.scenario ?? SCENARIOS[0].id
-  let gui: GUI | null = null
-  const openFolders = new Map<string, boolean>([['Bosse 1', true]])
+  let state: PanelState = { config: initial.config, models: [...(initial.models ?? [])], scenario: initial.scenario ?? SCENARIOS[0].id }
+  let active = 0
+  const openSections = new Set<string>([KICKER_SECTIONS[0][0]])
+  const root = el('aside', { attributes: { id: 'panel', 'aria-label': 'Réglages de la ligne' } })
+  const toggle = button('Réglages', () => {
+    const open = document.body.dataset.panel !== DRAWER_OPEN
+    document.body.dataset.panel = open ? DRAWER_OPEN : ''
+    toggle.setAttribute('aria-expanded', String(open))
+  })
+  toggle.id = 'panel-toggle'
+  toggle.setAttribute('aria-controls', 'panel')
+  toggle.setAttribute('aria-expanded', 'false')
+  document.body.append(toggle, root)
 
-  const emit = (): void => handlers.onChange(sanitizeLine(draft))
-  const modelOf = (index: number): string => models[index] ?? DEFAULT_MODEL_ID
-
-  const addFolder = (parent: GUI, title: string): GUI => {
-    const folder = parent.addFolder(title)
-    if (!openFolders.get(title)) folder.close()
-    folder.onOpenClose((changed) => {
-      if (changed === folder) openFolders.set(title, !folder._closed)
-    })
-    return folder
+  const emit = (): void => handlers.onChange(sanitizeLine(state.config))
+  /** Un curseur change une valeur sans rien redessiner ; le reste refait le panneau. */
+  const nudge = (next: PanelState): void => {
+    state = next
+    emit()
   }
-
-  const applyModel = (index: number, modelId: string): void => {
-    const model = getKickerModel(modelId)
-    models = draft.kickers.map((_, i) => (i === index ? model.id : modelOf(i)))
-    draft = {
-      ...draft,
-      kickers: draft.kickers.map((kicker, i) => (i === index ? modelKicker(model.id, index, kicker) : kicker)),
-      tricks: draft.tricks.map((trick, i) => (i === index ? model.trick : trick)),
-    }
-    rebuild()
+  const change = (next: PanelState): void => {
+    if (next === state) return
+    state = next
+    active = Math.min(active, state.config.kickers.length - 1)
+    render()
     emit()
   }
 
-  const addKickerFolder = (root: GUI, kicker: Mutable<KickerConfig>, index: number): void => {
-    const folder = addFolder(root, `Bosse ${index + 1}`)
-    const choices = {
-      model: modelOf(index),
-      trick: parseCustomTrick(draft.tricks[index]) ? CUSTOM_TRICK_PREFIX : draft.tricks[index],
-      ...(parseCustomTrick(draft.tricks[index]) ?? NEW_CUSTOM_TRICK),
-      reset: (): void => applyModel(index, modelOf(index)),
-      tune: (): void => handlers.onTuneKicker(index),
-      remove: (): void => {
-        draft = {
-          ...draft,
-          kickers: draft.kickers.filter((_, i) => i !== index),
-          tricks: draft.tricks.filter((_, i) => i !== index),
-        }
-        models = models.filter((_, i) => i !== index)
-        rebuild()
-        emit()
-      },
-    }
-    folder
-      .add(choices, 'model', MODEL_OPTIONS)
-      .name('Gabarit')
-      .onChange((id: string) => applyModel(index, id))
-    folder
-      .add(choices, 'trick', TRICK_OPTIONS)
-      .name('Figure')
-      .onChange((id: string) => {
-        const custom = id === CUSTOM_TRICK_PREFIX
-        customControls.forEach((control) => control.show(custom))
-        setTrick(custom ? customTrickId(choices) : id)
+  const section = (title: string, content: readonly Node[]): HTMLDetailsElement => {
+    const details = el('details', { className: 'panel-section' }, [el('summary', { text: title }), ...content])
+    details.open = openSections.has(title)
+    details.addEventListener('toggle', () => (details.open ? openSections.add(title) : openSections.delete(title)))
+    return details
+  }
+
+  const sliders = <T extends object>(
+    values: T,
+    keys: readonly (keyof T & string)[],
+    limits: Readonly<Record<keyof T, Limit>>,
+    labels: Readonly<Record<keyof T, string>>,
+    apply: (key: keyof T & string, value: number) => PanelState,
+  ): HTMLElement[] => keys.map((key) => slider(labels[key], Number(values[key]), limits[key], (value) => nudge(apply(key, value))))
+
+  const header = (): HTMLElement => {
+    const scenario = el('select', { attributes: { 'aria-label': 'Scénario' } }, SCENARIOS.map((item) => option(item.id, item.label, item.id === state.scenario)))
+    scenario.addEventListener('change', () => {
+      state = { ...state, scenario: scenario.value }
+      handlers.onScenario(scenario.value)
+    })
+    return el('header', { className: 'panel-head' }, [
+      el('h2', { text: 'Ta ligne' }),
+      el('label', { className: 'panel-field', text: 'Scénario ' }, [scenario]),
+      el('div', { className: 'panel-actions' }, [
+        button('Recharger', () => handlers.onScenario(state.scenario)),
+        button('Régler tous les élans', handlers.onTuneAll, 'primary'),
+      ]),
+    ])
+  }
+
+  const tabs = (): HTMLElement => {
+    const items = state.config.kickers.map((_, index) => {
+      const tab = button(String(index + 1), () => {
+        active = index
+        render()
       })
-    const setTrick = (id: string): void => {
-      draft = { ...draft, tricks: draft.tricks.map((trick, i) => (i === index ? id : trick)) }
-      emit()
-    }
-    const setCustomTrick = (): void => setTrick(customTrickId(choices))
-    const { flips, spinDegrees } = CUSTOM_TRICK_LIMITS
-    const customControls = [
-      folder.add(choices, 'flips', -flips, flips, 1).name('Saltos (− = avant)').onChange(setCustomTrick),
-      folder.add(choices, 'spinDegrees', 0, spinDegrees, 180).name('Vrille (°)').onChange(setCustomTrick),
-      folder.add(choices, 'grab', GRAB_OPTIONS).name('Grab').onChange(setCustomTrick),
+      tab.setAttribute('aria-pressed', String(index === active))
+      tab.setAttribute('aria-label', `Bosse ${index + 1}`)
+      return tab
+    })
+    const add = button('+', () => {
+      const next = withNewKicker(state)
+      active = next.config.kickers.length - 1
+      change(next)
+    })
+    add.setAttribute('aria-label', 'Ajouter une bosse')
+    const full = state.config.kickers.length >= MAX_KICKERS
+    return el('div', { className: 'bump-tabs', attributes: { role: 'group', 'aria-label': 'Bosses' } }, full ? items : [...items, add])
+  }
+
+  /** Choix de la figure : le catalogue rangé par famille, ou une figure composée à la main. */
+  const trickPicker = (index: number): HTMLElement => {
+    const current = state.config.tricks[index]
+    const custom = parseCustomTrick(current)
+    const picked = custom ? CUSTOM_TRICK_PREFIX : current
+    const groups = FAMILY_GROUPS.map(([label, families]) => {
+      const tricks = TRICKS.filter((trick) => families.includes(trick.family))
+      const group = el('optgroup', {}, tricks.map((trick) => option(trick.id, trick.label, trick.id === picked)))
+      group.label = label
+      return group
+    })
+    const select = el('select', { attributes: { 'aria-label': 'Figure' } }, [...groups, option(CUSTOM_TRICK_PREFIX, CUSTOM_LABEL, picked === CUSTOM_TRICK_PREFIX)])
+    select.addEventListener('change', () =>
+      change(withTrick(state, index, select.value === CUSTOM_TRICK_PREFIX ? customTrickId(custom ?? NEW_CUSTOM_TRICK) : select.value)),
+    )
+    const field = el('label', { className: 'panel-field', text: 'Figure ' }, [select])
+    if (!custom) return field
+    const setCustom = (changes: Partial<CustomTrickSettings>): void => change(withTrick(state, index, customTrickId({ ...custom, ...changes })))
+    const grab = el('select', { attributes: { 'aria-label': 'Grab' } }, GRABS.map((kind) => option(kind, kind === 'none' ? NO_GRAB_LABEL : kind, kind === custom.grab)))
+    grab.addEventListener('change', () => setCustom({ grab: GRABS.find((kind) => kind === grab.value) ?? 'none' }))
+    return el('div', { className: 'custom-trick' }, [
+      field,
+      slider('Saltos (− = avant)', custom.flips, { min: -CUSTOM_TRICK_LIMITS.flips, max: CUSTOM_TRICK_LIMITS.flips, step: 1 }, (flips) => setCustom({ flips })),
+      slider('Vrille (°)', custom.spinDegrees, { min: 0, max: CUSTOM_TRICK_LIMITS.spinDegrees, step: 180 }, (spinDegrees) => setCustom({ spinDegrees })),
+      el('label', { className: 'panel-field', text: 'Grab ' }, [grab]),
+    ])
+  }
+
+  const bump = (index: number): HTMLElement => {
+    const kicker = state.config.kickers[index]
+    const models = el('div', { className: 'chips', attributes: { role: 'group', 'aria-label': 'Gabarit' } }, KICKER_MODELS.map((model) => {
+      const chip = button(model.label, () => change(withModel(state, index, model.id)))
+      chip.setAttribute('aria-pressed', String(model.id === modelOf(state, index)))
+      return chip
+    }))
+    const groups = KICKER_SECTIONS.map(([title, keys]) =>
+      section(title, sliders(kicker, keys, KICKER_LIMITS, KICKER_LABELS, (key, value) => withKickerValue(state, index, key, value))),
+    )
+    const actions = [
+      button('Régler l’élan', () => handlers.onTuneKicker(index), 'primary'),
+      button('Réinitialiser', () => change(withModel(state, index, modelOf(state, index)))),
+      ...(state.config.kickers.length > 1 ? [button('Supprimer', () => change(withoutKicker(state, index)), 'danger')] : []),
     ]
-    customControls.forEach((control) => control.show(choices.trick === CUSTOM_TRICK_PREFIX))
-    addSliders(folder, kicker, KICKER_LIMITS, KICKER_LABELS, emit)
-    folder.add(choices, 'tune').name("Régler l'élan de cette bosse")
-    folder.add(choices, 'reset').name('Réinitialiser cette bosse à son gabarit')
-    if (draft.kickers.length > 1) folder.add(choices, 'remove').name('Supprimer cette bosse')
+    return el('section', { className: 'bump-editor', attributes: { 'aria-label': `Bosse ${index + 1}` } }, [
+      el('h3', { text: `Bosse ${index + 1}` }),
+      models,
+      trickPicker(index),
+      ...groups,
+      el('div', { className: 'panel-actions' }, actions),
+    ])
   }
 
-  const rebuild = (): void => {
-    gui?.destroy()
-    const root = new GUI({ title: 'Réglages de la ligne', width: 330 })
-    gui = root
-
-    const actions = {
-      scenario,
-      reload: (): void => handlers.onScenario(scenario),
-      tuneAll: handlers.onTuneAll,
-      addKicker: (): void => {
-        draft = { ...draft, kickers: [...draft.kickers, { ...NEW_KICKER }], tricks: [...draft.tricks, NEW_TRICK] }
-        models = [...draft.kickers.slice(0, -1).map((_, i) => modelOf(i)), DEFAULT_MODEL_ID]
-        openFolders.set(`Bosse ${draft.kickers.length}`, true)
-        rebuild()
-        emit()
-      },
-    }
-    root
-      .add(actions, 'scenario', SCENARIO_OPTIONS)
-      .name('Scénario')
-      .onChange((id: string) => handlers.onScenario(id))
-    root.add(actions, 'reload').name('Recharger ce scénario')
-    root.add(actions, 'tuneAll').name('Régler tous les élans automatiquement')
-    if (draft.kickers.length < MAX_KICKERS) root.add(actions, 'addKicker').name('Ajouter une bosse')
-
-    draft.kickers.forEach((kicker, index) => addKickerFolder(root, kicker, index))
-
-    const riderFolder = addFolder(root, 'Skieur')
-    riderFolder
-      .add({ startSwitch: draft.startSwitch }, 'startSwitch')
-      .name('Départ en switch (en arrière)')
-      .onChange((startSwitch: boolean) => {
-        draft = { ...draft, startSwitch }
-        emit()
-      })
-    addSliders(riderFolder, draft.rider, RIDER_LIMITS, RIDER_LABELS, emit)
-    addSliders(addFolder(root, 'Conditions'), draft.environment, ENVIRONMENT_LIMITS, ENVIRONMENT_LABELS, emit)
+  const rider = (): HTMLElement => {
+    const start = el('input', { attributes: { type: 'checkbox' } })
+    start.checked = state.config.startSwitch
+    start.addEventListener('change', () => change(withStartSwitch(state, start.checked)))
+    const keys = Object.keys(RIDER_LABELS) as (keyof RiderConfig)[]
+    return section('Skieur', [
+      el('label', { className: 'panel-check' }, [start, document.createTextNode(' Départ en switch (en arrière)')]),
+      ...sliders(state.config.rider, keys, RIDER_LIMITS, RIDER_LABELS, (key, value) => withRiderValue(state, key, value)),
+    ])
   }
 
-  rebuild()
+  const conditions = (): HTMLElement => {
+    const keys = Object.keys(ENVIRONMENT_LABELS) as (keyof EnvironmentConfig)[]
+    return section('Conditions', sliders(state.config.environment, keys, ENVIRONMENT_LIMITS, ENVIRONMENT_LABELS, (key, value) => withEnvironmentValue(state, key, value)))
+  }
+
+  function render(): void {
+    const scroll = root.scrollTop
+    root.replaceChildren(header(), tabs(), bump(active), rider(), conditions())
+    root.scrollTop = scroll
+  }
+
+  render()
   return {
-    getLine: () => ({ config: sanitizeLine(draft), models: draft.kickers.map((_, index) => modelOf(index)), scenario }),
+    getLine: () => ({ config: sanitizeLine(state.config), models: state.config.kickers.map((_, index) => modelOf(state, index)), scenario: state.scenario }),
     setLine: (line: PanelLine): void => {
-      draft = toDraft(line.config)
-      if (line.models) models = [...line.models]
-      if (line.scenario) scenario = line.scenario
-      rebuild()
+      state = { config: line.config, models: line.models ? [...line.models] : state.models, scenario: line.scenario ?? state.scenario }
+      active = Math.min(active, state.config.kickers.length - 1)
+      render()
     },
   }
 }

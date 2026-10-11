@@ -286,7 +286,7 @@ function buildRows(
   ]
 }
 
-/** Résumé toujours visible : verdict de la ligne et l'essentiel de chaque bosse. */
+/** Résumé toujours visible : verdict de la ligne et une carte par bosse avec l'essentiel. */
 export function renderSummary(
   element: HTMLElement,
   result: SimulationResult,
@@ -306,7 +306,18 @@ export function renderSummary(
           `${fixed(report.landing.equivalentFallHeight, 2)} m`,
         )
       : '—'
-    return `<tr><th scope="row">Bosse ${i + 1}</th><td>${lip}</td><td>${ideal}</td><td>${flight}</td><td>${trickCell(report, plans[i], stances[i] === true)}</td><td>${shock}</td><td>${verdict(report, result.crash)}</td></tr>`
+    const stats = [
+      ['À la lèvre', lip],
+      ['Vitesse idéale', ideal],
+      ['Vol', flight],
+      ['Choc', shock],
+    ].map(([name, value]) => `<div><dt>${name}</dt><dd>${value}</dd></div>`)
+    return `<article class="bump-card">
+      <h3>Bosse ${i + 1}</h3>
+      <p class="bump-trick">${trickCell(report, plans[i], stances[i] === true)}</p>
+      <dl class="bump-stats">${stats.join('')}</dl>
+      <p class="bump-landing">${verdict(report, result.crash)}</p>
+    </article>`
   })
   const { crash } = result
   const { level, label } = crash
@@ -325,14 +336,7 @@ export function renderSummary(
     : ''
   element.innerHTML = `
     <p class="verdict ${level}">${label}</p>${slide}
-    <table>
-      <thead><tr>
-        <th></th><th>À la lèvre</th><th>Vitesse idéale</th><th>Vol</th><th>Figure</th>
-        <th title="Hauteur de chute équivalente : chute à plat qui donnerait le même choc">Choc</th>
-        <th>Réception</th>
-      </tr></thead>
-      <tbody>${rows.join('')}</tbody>
-    </table>`
+    <div class="bump-cards">${rows.join('')}</div>`
 }
 
 /** Tableau de résultats détaillé : une colonne par bosse. */
@@ -349,7 +353,9 @@ export function renderResults(
   const body = buildRows(result, solutions, plans, stances)
     .map((row) => {
       const cells = reports.map((report, i) => `<td>${row.cell(report, i)}</td>`).join('')
-      return `<tr><th scope="row" title="${row.hint ?? ''}">${row.label}</th>${cells}</tr>`
+      // L'explication se déplie au clic ou au toucher : un `title` ne se lit pas sur un téléphone.
+      const label = row.hint ? `<details class="hint"><summary>${row.label}</summary>${row.hint}</details>` : row.label
+      return `<tr><th scope="row">${label}</th>${cells}</tr>`
     })
     .join('')
 

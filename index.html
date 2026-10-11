@@ -2,7 +2,7 @@
 <html lang="fr">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <title>Simulateur de kickers</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -12,6 +12,7 @@
     />
     <link rel="stylesheet" href="/src/style.css" />
     <link rel="stylesheet" href="/src/app.css" />
+    <link rel="stylesheet" href="/src/sandbox.css" />
   </head>
   <body data-view="menu">
     <canvas id="scene"></canvas>
@@ -42,6 +43,7 @@
         <button id="share" type="button" title="Copie un lien qui rouvre cette ligne">Copier le lien</button>
       </div>
       <canvas id="chart"></canvas>
+      <p class="chart-legend">Vitesse en km/h le long de la ligne, en orange pendant les vols</p>
       <div id="summary"></div>
       <button id="toggle-results" type="button" class="link">Afficher le détail des calculs</button>
       <div id="results"></div>
