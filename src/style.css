@@ -1,0 +1,394 @@
+:root {
+  /* Habillage de retransmission : bleu nuit alpin, neige, orange des jalons de piste. */
+  --night: #0f2238;
+  --night-raised: #1a3350;
+  --snow: #f4f8fc;
+  --glacier: #9db9d6;
+  --rule: rgba(157, 185, 214, 0.22);
+  --pole: #ff5a1f;
+  --ok: #27a674;
+  --warn: #f0a224;
+  --bad: #e23d44;
+  --display: 'Barlow Condensed', 'Arial Narrow', sans-serif;
+  --body: 'Barlow', system-ui, sans-serif;
+  --gui-width: 330px;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+  overflow: hidden;
+  font-family: var(--body);
+  color: var(--snow);
+  background: #d6e6f4;
+}
+
+#scene {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+button,
+select,
+input {
+  font: inherit;
+}
+
+:focus-visible {
+  outline: 2px solid var(--pole);
+  outline-offset: 2px;
+}
+
+/* Bloc de vitesse en direct */
+
+#live {
+  position: fixed;
+  top: 14px;
+  left: 14px;
+  width: 196px;
+  padding: 12px 14px 12px;
+  background: var(--night);
+  border-radius: 3px;
+  box-shadow: 0 10px 28px rgba(15, 34, 56, 0.28);
+}
+
+#live .speed {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  font-family: var(--display);
+  font-weight: 700;
+  font-size: 68px;
+  line-height: 0.86;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+}
+
+#live .speed small {
+  font-family: var(--body);
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--glacier);
+  letter-spacing: 0;
+}
+
+#live .phase {
+  margin: 8px 0 10px;
+  font-family: var(--display);
+  font-size: 19px;
+  font-weight: 600;
+  line-height: 1.1;
+}
+
+.gauge {
+  position: relative;
+  height: 6px;
+  background: var(--night-raised);
+  border-radius: 3px;
+}
+
+.gauge-fill {
+  height: 100%;
+  width: 0;
+  border-radius: 3px;
+  background: var(--ok);
+}
+
+.gauge-fill.warn {
+  background: var(--warn);
+}
+
+.gauge-fill.bad {
+  background: var(--bad);
+}
+
+.gauge i {
+  position: absolute;
+  top: -3px;
+  width: 1px;
+  height: 12px;
+  background: var(--glacier);
+}
+
+#live dl {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 3px 12px;
+  margin: 10px 0 0;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+
+#live dt {
+  color: var(--glacier);
+}
+
+#live dd {
+  margin: 0;
+  text-align: right;
+  font-weight: 500;
+}
+
+/* Bandeau bas : lecture, caméras, courbe de vitesse, résultats */
+
+#dock {
+  position: fixed;
+  left: 14px;
+  bottom: 14px;
+  width: min(900px, calc(100vw - var(--gui-width) - 44px));
+  max-height: 68vh;
+  padding: 10px 14px 12px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  background: var(--night);
+  border-radius: 3px;
+  box-shadow: 0 10px 28px rgba(15, 34, 56, 0.28);
+}
+
+.bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+}
+
+.bar button,
+.bar select {
+  color: var(--snow);
+  background: var(--night-raised);
+  border: 1px solid transparent;
+  border-radius: 3px;
+  padding: 5px 11px;
+  cursor: pointer;
+}
+
+.bar button:hover,
+.bar select:hover {
+  border-color: var(--glacier);
+}
+
+.bar button.primary {
+  min-width: 74px;
+  font-weight: 600;
+  color: var(--night);
+  background: var(--snow);
+}
+
+.bar select option {
+  color: #111;
+}
+
+.field {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--glacier);
+}
+
+#timeline {
+  flex: 1 1 120px;
+  min-width: 90px;
+  accent-color: var(--pole);
+}
+
+.cameras {
+  display: inline-flex;
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.cameras button {
+  border-radius: 0;
+}
+
+.cameras button[aria-pressed='true'] {
+  font-weight: 600;
+  color: var(--night);
+  background: var(--pole);
+}
+
+#chart {
+  width: 100%;
+  height: 92px;
+  flex: none;
+}
+
+#summary,
+#results {
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+}
+
+#summary .verdict {
+  margin: 0 0 6px;
+  font-family: var(--display);
+  font-size: 21px;
+  font-weight: 600;
+  line-height: 1.15;
+}
+
+#summary .verdict.ok {
+  color: #5fd3a4;
+}
+
+#summary .verdict.warn {
+  color: var(--warn);
+}
+
+#summary .verdict.bad {
+  color: #ff7a80;
+}
+
+#results {
+  overflow: auto;
+}
+
+#dock.collapsed #results {
+  display: none;
+}
+
+button.link {
+  align-self: flex-start;
+  padding: 0;
+  color: var(--glacier);
+  background: none;
+  border: none;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+  font-size: 13px;
+}
+
+button.link:hover {
+  color: var(--snow);
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+th,
+td {
+  padding: 4px 10px;
+  text-align: right;
+  border-top: 1px solid var(--rule);
+  white-space: nowrap;
+}
+
+th:first-child,
+td:first-child {
+  padding-left: 0;
+  text-align: left;
+}
+
+thead th {
+  border-top: none;
+  color: var(--glacier);
+  font-weight: 500;
+}
+
+tbody th {
+  font-weight: 500;
+  color: var(--glacier);
+}
+
+#summary tbody th {
+  font-family: var(--display);
+  font-size: 17px;
+  font-weight: 600;
+  color: var(--snow);
+}
+
+tbody th[title]:not([title='']) {
+  text-decoration: underline dotted;
+  text-underline-offset: 3px;
+  cursor: help;
+}
+
+.tag {
+  display: inline-block;
+  padding: 1px 8px;
+  border-radius: 2px;
+  font-weight: 600;
+  color: var(--night);
+}
+
+.tag.ok {
+  background: var(--ok);
+  color: #fff;
+}
+
+.tag.warn {
+  background: var(--warn);
+}
+
+.tag.bad {
+  background: var(--bad);
+  color: #fff;
+}
+
+/* Panneau de réglages lil-gui, aux couleurs de l'habillage */
+
+.lil-gui {
+  --background-color: var(--night);
+  --title-background-color: var(--night);
+  --title-text-color: var(--snow);
+  --text-color: var(--snow);
+  --widget-color: var(--night-raised);
+  --hover-color: #25456b;
+  --focus-color: #2c5180;
+  --number-color: #ffb08f;
+  --string-color: #ffb08f;
+  --font-family: var(--body);
+  --font-size: 13px;
+  --input-font-size: 13px;
+  --widget-height: 24px;
+  --spacing: 5px;
+  --name-width: 52%;
+}
+
+.lil-gui.lil-root {
+  top: 14px;
+  right: 14px;
+  border-radius: 3px;
+  box-shadow: 0 10px 28px rgba(15, 34, 56, 0.28);
+  max-height: calc(100vh - 28px);
+}
+
+.lil-gui .lil-title {
+  font-family: var(--display);
+  font-size: 17px;
+  font-weight: 600;
+}
+
+@media (max-width: 820px) {
+  #dock {
+    width: calc(100vw - 28px);
+    max-height: 46vh;
+  }
+
+  #live {
+    width: 150px;
+  }
+
+  #live .speed {
+    font-size: 48px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    transition: none !important;
+  }
+}

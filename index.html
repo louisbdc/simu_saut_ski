@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Simulateur de kickers</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600&family=Barlow+Condensed:wght@500;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="/src/style.css" />
+  </head>
+  <body>
+    <canvas id="scene"></canvas>
+
+    <section id="live" aria-label="Mesures en direct"></section>
+
+    <section id="dock" class="collapsed" aria-label="Lecture et résultats">
+      <div class="bar">
+        <button id="play" type="button" class="primary" title="Espace">Pause</button>
+        <button id="restart" type="button" title="Touche R">Rejouer</button>
+        <label class="field">
+          Vitesse
+          <select id="rate">
+            <option value="1">1×</option>
+            <option value="0.5">0,5×</option>
+            <option value="0.25" selected>0,25×</option>
+            <option value="0.1">0,1×</option>
+          </select>
+        </label>
+        <input id="timeline" type="range" min="0" max="1000" value="0" aria-label="Position dans le parcours" />
+        <div class="cameras" role="group" aria-label="Caméra">
+          <button type="button" data-camera="side" aria-pressed="true" title="Touche 1">Latérale</button>
+          <button type="button" data-camera="chase" aria-pressed="false" title="Touche 2">Poursuite</button>
+          <button type="button" data-camera="tv" aria-pressed="false" title="Touche 3">Télé</button>
+          <button type="button" data-camera="free" aria-pressed="false" title="Touche 4">Libre</button>
+        </div>
+        <button id="overview" type="button">Vue d’ensemble</button>
+      </div>
+      <canvas id="chart"></canvas>
+      <div id="summary"></div>
+      <button id="toggle-results" type="button" class="link">Afficher le détail des calculs</button>
+      <div id="results"></div>
+    </section>
+
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
