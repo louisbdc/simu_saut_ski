@@ -1,11 +1,13 @@
 import * as THREE from 'three'
+import { SILENCE, soundFrame } from './audio/soundCues'
+import { createSoundscape } from './audio/soundscape'
 import { decodeLine, encodeLine, readStoredLine, storeLine, type SavedLine } from './app/lineCodec'
 import { routeHash } from './app/routes'
 import { startApp, type SceneFrame } from './app/shell'
 import { DEFAULT_SCENARIO_ID, buildScenario } from './physics/presets'
 import { simulate } from './physics/simulate'
 import { solveInrunLength, tuneLine, withKicker, type InrunSolution } from './physics/solver'
-import type { LineConfig, SimulationResult } from './physics/types'
+import type { LineConfig, Sample, SimulationResult } from './physics/types'
 import { buildFarSurroundings, buildSurroundings } from './scene/backdrop'
 import { createCameraRig, type CameraMode } from './scene/cameraRig'
 import { buildCrashScene, type CrashScene } from './scene/crash'
@@ -122,6 +124,11 @@ let farDecorTimer: number | undefined
 let liftRide: LiftRide | null = null
 /** Le skieur était-il en l'air à l'image précédente ? Sert à repérer l'instant d'une réception. */
 let wasAirborne = false
+/** Image précédente de la descente, pour repérer au son un décollage, une réception ou une chute. */
+let heard: { readonly sample: Sample; readonly fallen: boolean } | null = null
+const sound = createSoundscape()
+/** Écrans où la descente s'entend : derrière le menu et la liste des tutos, elle reste muette. */
+const AUDIBLE_VIEWS: readonly (string | undefined)[] = ['sandbox', 'lesson']
 /** Réglage en attente : appliqué une seule fois par image, même si le curseur a bougé dix fois entre-temps. */
 let pendingConfig: LineConfig | null = null
 /** Hauteur du bandeau bas, relue seulement quand il change de taille. */
@@ -445,6 +452,8 @@ window.addEventListener('resize', () => {
   wake()
 })
 // Toute action de l'utilisateur peut changer l'image : on redessine un instant, puis on se rendort.
+// Un navigateur ne laisse sortir aucun son avant un geste de l'utilisateur.
+;['pointerdown', 'keydown'].forEach((type) => window.addEventListener(type, sound.unlock, { passive: true }))
 ;['pointerdown', 'wheel', 'keydown', 'input', 'change'].forEach((type) =>
   window.addEventListener(type, wake, { passive: true }),
 )
@@ -476,6 +485,7 @@ function frame(now: number): void {
   // En pause, caméra immobile et rien en cours : l'image ne changerait pas, on ne la recalcule pas.
   const moving = playback.playing || idle.isAwake(now) || spray.liveCount() > 0
   if (!moving && !stage.controls.update()) {
+    sound.update(SILENCE)
     requestAnimationFrame(frame)
     return
   }
@@ -490,8 +500,11 @@ function frame(now: number): void {
     gate: crashScene ? 0 : gateOpenAt(liftRide.plan, sinceHandover),
     bar: crashScene ? 0 : barDownAt(liftRide.plan, sinceHandover),
   })
-  if (liftRide && !crashScene && sinceHandover >= 0) frameLift(liftRide, sinceHandover, elapsed)
-  else frameDescent(elapsed)
+  if (liftRide && !crashScene && sinceHandover >= 0) {
+    heard = null
+    sound.update(SILENCE)
+    frameLift(liftRide, sinceHandover, elapsed)
+  } else frameDescent(elapsed)
 
   const playLabel = playback.playing ? 'Pause' : 'Lecture'
   if (playButton.textContent !== playLabel) playButton.textContent = playLabel
@@ -574,6 +587,21 @@ function frameDescent(elapsed: number): void {
   stage.renderer.render(stage.scene, stage.camera)
 
   updateLive(sample, fallen ? CRASH_LABEL : jump ? trickName(jump.plan, jump.switchBefore) : null, ridingSwitch)
+  const audible = AUDIBLE_VIEWS.includes(document.body.dataset.view)
+  sound.update(
+    audible
+      ? soundFrame({
+          previous: heard?.sample ?? null,
+          current: sample,
+          playing: playback.playing,
+          rate: playback.rate,
+          fallen,
+          wasFallen: heard?.fallen ?? false,
+          landingImpact: result.reports[sample.kicker]?.landing?.equivalentFallHeight ?? 0,
+        })
+      : SILENCE,
+  )
+  heard = { sample, fallen }
   chart.draw(sample.x)
 }
 
@@ -630,6 +658,7 @@ startApp({
     loopWindow = window
   },
   setCamera,
+  sound: { isMuted: sound.isMuted, setMuted: sound.setMuted },
   setBottomInset: (pixels) => {
     screenInset = pixels
     wake()
@@ -652,14 +681,3 @@ startApp({
 })
 idle.wake(performance.now(), STARTUP_WAKE_MS)
 requestAnimationFrame(frame)
-// DEBUG-TEMP
-;(window as unknown as Record<string, unknown>).__seek = (t: number, dx = 0, dy = 3, dz = 9) => {
-  playback = { ...playback, time: (liftRide?.plan.handover ?? 0) + t, playing: false }
-  setCamera('free')
-  if (!liftRide) return null
-  const state = epilogueAt(liftRide.plan, t)
-  stage.controls.target.set(state.x, state.y + 1, state.z)
-  stage.camera.position.set(state.x + dx, state.y + 1 + dy, state.z + dz)
-  wake()
-  return { end: liftRide.plan.approachEnd, lead: liftRide.plan.leadLength / (liftRide.plan.entrySpeed || 1), state }
-}

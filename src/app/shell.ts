@@ -37,6 +37,8 @@ export interface Simulator {
   /** Fait tourner la lecture en boucle sur une tranche du parcours ; `null` rend la boucle normale. */
   readonly setLoop: (window: TimeWindow | null) => void
   readonly setCamera: (mode: CameraMode) => void
+  /** Son de la descente : coupé ou non, au choix de l'utilisateur. */
+  readonly sound: { readonly isMuted: () => boolean; readonly setMuted: (muted: boolean) => void }
   /** Hauteur, en pixels, masquée en bas de l'écran par un bandeau autre que celui de la piste libre. */
   readonly setBottomInset: (pixels: number) => void
   /** Ajoute un objet à la scène 3D, pour toute la durée de la page. */
@@ -94,6 +96,17 @@ export function startApp(simulator: Simulator): void {
   const lessonView = createLessonView(simulator)
   document.body.append(topbar, menu, tutorials, lessonView.panel, lessonView.rail)
   let crumbs: readonly Crumb[] = []
+  const soundButton = el('button', { className: 'sound-toggle', attributes: { type: 'button' } })
+  const showSound = (): void => {
+    const on = !simulator.sound.isMuted()
+    soundButton.textContent = on ? 'Son : oui' : 'Son : non'
+    soundButton.setAttribute('aria-pressed', String(on))
+  }
+  soundButton.addEventListener('click', () => {
+    simulator.sound.setMuted(!simulator.sound.isMuted())
+    showSound()
+  })
+  showSound()
 
   const show = (): void => {
     const route = parseRoute(window.location.hash)
@@ -105,7 +118,7 @@ export function startApp(simulator: Simulator): void {
     const changed = document.body.dataset.view !== route.view
     document.body.dataset.view = route.view
     crumbs = crumbsOf(route, lesson)
-    topbar.replaceChildren(...crumbNodes(crumbs))
+    topbar.replaceChildren(...crumbNodes(crumbs), soundButton)
     topbar.hidden = route.view === 'menu'
     menu.hidden = route.view !== 'menu'
     tutorials.hidden = route.view !== 'tutorials'

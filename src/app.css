@@ -64,6 +64,24 @@ body:not([data-view='menu']) #live {
   color: var(--pole);
 }
 
+.sound-toggle {
+  margin-left: 6px;
+  padding: 4px 12px;
+  font-family: var(--body);
+  font-size: 13px;
+  font-weight: 800;
+  color: var(--glacier);
+  background: rgba(8, 22, 40, 0.5);
+  border: none;
+  border-radius: 999px;
+  cursor: pointer;
+}
+
+.sound-toggle[aria-pressed='true'] {
+  color: #4a1d00;
+  background: var(--sun);
+}
+
 /* Menu d'accueil */
 
 #menu {
