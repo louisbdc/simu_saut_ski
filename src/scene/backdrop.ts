@@ -1,3 +1,4 @@
+import { OCCLUDERS_KEY, type Occluder } from './occlusion'
 import * as THREE from 'three'
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js'
 import { heightAt } from '../physics/terrain'
@@ -166,6 +167,8 @@ const TREE_MATERIAL = markShared(new THREE.MeshStandardMaterial({ vertexColors: 
 /** Hauteur et rayon au sol d'un sapin proche de taille 1, pour son ombre. */
 const TREE_HEIGHT = 7.7
 const TREE_RADIUS = 2
+/** Part du rayon au sol d'un sapin qui cache vraiment ce qui est derrière lui. */
+const TREE_SIGHT_SHARE = 0.6
 
 /**
  * Sapins détaillés du bord de piste, avec leurs ombres. Ils suivent les mêmes massifs et les mêmes
@@ -210,6 +213,16 @@ function buildTrees(shape: CourseShape): THREE.Group {
     trees.setMatrixAt(i, matrix)
     trees.setColorAt(i, tints[i])
   })
+  // Un sapin est un cône : à mi-hauteur, il n'occupe plus qu'une part de son rayon au sol.
+  const occluders: Occluder[] = casters.map((caster, instance) => ({
+    x: caster.x,
+    y: caster.groundY,
+    z: caster.z,
+    radius: caster.radius * TREE_SIGHT_SHARE,
+    height: caster.height,
+    instance,
+  }))
+  trees.userData[OCCLUDERS_KEY] = occluders
   const group = new THREE.Group()
   group.add(buildContactShadows(shape, casters), trees)
   return group

@@ -7,6 +7,7 @@ import type { LineConfig, SimulationResult } from './physics/types'
 import { buildFarSurroundings, buildSurroundings } from './scene/backdrop'
 import { createCameraRig, type CameraMode } from './scene/cameraRig'
 import { buildCrashScene, type CrashScene } from './scene/crash'
+import { createOcclusionCuller, type OcclusionCuller } from './scene/occlusion'
 import { PARTS, type RagdollPoints, type RagdollStart } from './scene/ragdoll'
 import { barDownAt, chairTravelAt, epilogueAt, gateOpenAt } from './scene/epilogue'
 import { buildLiftRide, liftLabel, liftSample, seatedPosture, type LiftRide } from './scene/liftRide'
@@ -43,6 +44,8 @@ const MAX_FRAME_SECONDS = 0.1
 const CRASH_HOLD_SECONDS = 2.5
 /** Flocons soulevés à chaque réception. */
 const LANDING_PUFF = 70
+/** Hauteur du buste au-dessus des skis : c'est lui que la caméra doit toujours voir. */
+const SUBJECT_HEIGHT = 1
 /** Délai pendant lequel on continue de dessiner après une action, et au démarrage le temps de charger le mannequin. */
 const WAKE_MS = 600
 const STARTUP_WAKE_MS = 8000
@@ -88,6 +91,8 @@ let appliedFailure: number | undefined
 let solutions: readonly InrunSolution[] | null = null
 let playback: PlaybackState = { time: 0, playing: true, rate: Number(rateSelect.value) }
 let groups: SceneGroups | null = null
+/** Cache les oriflammes, l'arche et les sapins qui passent entre la caméra et le skieur. */
+let culler: OcclusionCuller | null = null
 /** Décor lointain : refait à part, seulement quand un réglage est stabilisé. */
 let farDecor: THREE.Group | null = null
 let farDecorTimer: number | undefined
@@ -137,6 +142,7 @@ function replaceGroups(next: SceneGroups): void {
   })
   stage.scene.add(...Object.values(next))
   groups = next
+  culler = createOcclusionCuller([next.surroundings])
 }
 
 /** Refait le décor lointain pour la piste affichée. */
@@ -471,6 +477,7 @@ function frameLift(ride: LiftRide, sinceHandover: number, elapsed: number): void
   wasAirborne = false
   rig.updateScenic({ focus, phase: state.phase, rideProgress: state.rideProgress }, elapsed)
   stage.controls.update()
+  culler?.update(stage.camera.position, focus)
   trackLight(stage, focus)
   stage.renderer.render(stage.scene, stage.camera)
 
@@ -508,6 +515,7 @@ function frameDescent(elapsed: number): void {
     terrain: result.terrain,
   })
   stage.controls.update()
+  culler?.update(stage.camera.position, { x: viewed.x, y: viewed.y + SUBJECT_HEIGHT, z: 0 })
   trackLight(stage, new THREE.Vector3(viewed.x, viewed.y, 0))
   stage.renderer.render(stage.scene, stage.camera)
 

@@ -2,6 +2,7 @@ import * as THREE from 'three'
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js'
 import { FACE_RUN } from '../physics/constants'
 import { markShared } from './sharedAssets'
+import { OCCLUDERS_KEY, type Occluder } from './occlusion'
 import { type CourseShape, type KickerShape, crossSectionAt, surfaceHeightAt } from './terrainShape'
 
 const POLE_HEIGHT = 4.4
@@ -54,6 +55,9 @@ function flagGeometry(): THREE.BufferGeometry {
 const ARCH_AHEAD = 2.5
 const ARCH_HALF_SPAN = 5.2
 const ARCH_HEIGHT = 4.6
+/** Rayon du cylindre qui approche une jambe de l'arche, et nombre de cylindres par demi-traverse. */
+const ARCH_LEG_RADIUS = 0.6
+const ARCH_BEAM_STEPS = 5
 const ARCH_COLOR = new THREE.Color(0x1b5fc4)
 const ARCH_STRIPE = new THREE.Color(0xeef2f6)
 
@@ -111,6 +115,9 @@ function buildFlags(shape: CourseShape): THREE.InstancedMesh {
     flags.setMatrixAt(i, transform.matrix)
   })
   flags.castShadow = true
+  // Vue de côté, la voile se présente en plein panneau : c'est elle qui cache le skieur à la lèvre.
+  const occluders: Occluder[] = spots.map((spot, instance) => ({ x: spot.x, y: spot.y, z: spot.z, radius: BANNER_WIDTH, height: POLE_HEIGHT, instance }))
+  flags.userData[OCCLUDERS_KEY] = occluders
   return flags
 }
 
@@ -162,6 +169,13 @@ export function buildDressing(shape: CourseShape): THREE.Group {
   // Ses pieds sont posés au plus bas de la neige sous ses deux jambes : la piste part en pente.
   arch.position.set(archX, surfaceHeightAt(shape, archX + 0.4, ARCH_HALF_SPAN), 0)
   arch.castShadow = true
+  // Deux jambes et une traverse, approchées par des cylindres : l'arche disparaît dès qu'une partie gêne.
+  const beam = Array.from({ length: 2 * ARCH_BEAM_STEPS + 1 }, (_, index) => ((index - ARCH_BEAM_STEPS) * ARCH_HALF_SPAN) / ARCH_BEAM_STEPS)
+  const archOccluders: Occluder[] = [
+    ...[-ARCH_HALF_SPAN, ARCH_HALF_SPAN].map((z) => ({ x: archX, y: arch.position.y, z, radius: ARCH_LEG_RADIUS, height: ARCH_HEIGHT + 0.9 })),
+    ...beam.map((z) => ({ x: archX, y: arch.position.y + ARCH_HEIGHT, z, radius: ARCH_LEG_RADIUS, height: 0.9 })),
+  ]
+  arch.userData[OCCLUDERS_KEY] = archOccluders
   group.add(buildFlags(shape), arch)
   shape.kickers.forEach((kicker, index) => {
     const label = wallLabel(kicker, index)
