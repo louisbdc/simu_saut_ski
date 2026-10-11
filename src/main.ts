@@ -1,4 +1,6 @@
 import * as THREE from 'three'
+import { decodeLine, encodeLine, readStoredLine, storeLine, type SavedLine } from './app/lineCodec'
+import { routeHash } from './app/routes'
 import { startApp, type SceneFrame } from './app/shell'
 import { DEFAULT_SCENARIO_ID, buildScenario } from './physics/presets'
 import { simulate } from './physics/simulate'
@@ -33,6 +35,10 @@ import { CRASH_LABEL, createLive, query, renderError, renderResults, renderSumma
 import { createPanel } from './ui/panel'
 
 const SOLVER_DELAY_MS = 200
+/** La ligne est enregistrée une fois les réglages immobiles depuis ce délai. */
+const SAVE_DELAY_MS = 500
+/** Durée d'affichage de la confirmation après la copie du lien. */
+const COPIED_NOTICE_MS = 1800
 /** Le décor lointain n'est refait qu'une fois le curseur immobile depuis ce délai. */
 const FAR_DECOR_DELAY_MS = 180
 /** Écart d'orientation à la réception au-delà duquel une figure pas bouclée fait tomber, en radians. */
@@ -78,8 +84,24 @@ interface SceneGroups {
   readonly lift: THREE.Group
 }
 
-const firstScenario = buildScenario(DEFAULT_SCENARIO_ID)
-let config: LineConfig = tuneLine(firstScenario.config)
+/** Navigateur qui refuse le stockage (navigation privée stricte) : on fait sans. */
+function browserStorage(): Storage | null {
+  try {
+    return window.localStorage
+  } catch {
+    return null
+  }
+}
+
+const storage = browserStorage()
+const defaultScenario = buildScenario(DEFAULT_SCENARIO_ID)
+/** Ligne de départ : la dernière qu'on a réglée ici, sinon le scénario par défaut, élans réglés. */
+const firstLine: SavedLine = (storage && readStoredLine(storage)) ?? {
+  config: tuneLine(defaultScenario.config),
+  models: defaultScenario.models,
+  scenario: DEFAULT_SCENARIO_ID,
+}
+let config: LineConfig = firstLine.config
 let result: SimulationResult = simulate(config)
 let plans: readonly TrickPlan[] = []
 /** Sens de glisse avant chaque bosse, puis après la dernière : `true` = en switch. */
@@ -116,6 +138,18 @@ let frameHook: ((frame: SceneFrame) => void) | null = null
 const idle = createIdleGate(WAKE_MS)
 const wake = (): void => idle.wake(performance.now())
 let solverTimer: number | undefined
+let saveTimer: number | undefined
+
+/**
+ * Enregistre la ligne de la piste libre une fois le geste fini. Les pistes des leçons passent par
+ * les mêmes fonctions d'affichage : elles ne sont jamais enregistrées.
+ */
+function scheduleSave(): void {
+  window.clearTimeout(saveTimer)
+  saveTimer = window.setTimeout(() => {
+    if (storage && sandboxConfig === null) storeLine(storage, panel.getLine())
+  }, SAVE_DELAY_MS)
+}
 
 function buildGroups(simulated: SimulationResult, ride: LiftRide): SceneGroups {
   return {
@@ -314,6 +348,7 @@ function applyTuning(tune: (current: LineConfig) => LineConfig): void {
     const tuned = tune(config)
     panel.setLine({ config: tuned })
     applyConfig(tuned)
+    scheduleSave()
   } catch (error: unknown) {
     renderError(summaryElement, error)
   }
@@ -327,13 +362,14 @@ function loadScenario(id: string): void {
     panel.setLine({ config: tuned, models: scenario.models, scenario: id })
     applyConfig(tuned)
     restart()
+    scheduleSave()
   } catch (error: unknown) {
     renderError(summaryElement, error)
   }
 }
 
 const panel = createPanel(
-  { config, models: firstScenario.models, scenario: DEFAULT_SCENARIO_ID },
+  { config, models: firstLine.models, scenario: firstLine.scenario ?? DEFAULT_SCENARIO_ID },
   {
     onChange: (next) => {
       pendingConfig = next
@@ -385,6 +421,21 @@ document.addEventListener('click', (event) => {
   if (button) setCamera(button.dataset.camera as CameraMode)
 })
 query<HTMLButtonElement>('#overview').addEventListener('click', showOverview)
+const shareButton = query<HTMLButtonElement>('#share')
+const shareLabel = shareButton.textContent ?? ''
+shareButton.addEventListener('click', () => {
+  const link = `${window.location.origin}${window.location.pathname}${routeHash({ view: 'sandbox', line: encodeLine(panel.getLine()) })}`
+  navigator.clipboard
+    .writeText(link)
+    .then(() => 'Lien copié')
+    .catch(() => 'Copie impossible')
+    .then((notice) => {
+      shareButton.textContent = notice
+      window.setTimeout(() => {
+        shareButton.textContent = shareLabel
+      }, COPIED_NOTICE_MS)
+    })
+})
 toggleResults.addEventListener('click', () => {
   const collapsed = dock.classList.toggle('collapsed')
   toggleResults.textContent = collapsed ? 'Afficher le détail des calculs' : 'Masquer le détail des calculs'
@@ -420,6 +471,7 @@ function frame(now: number): void {
     // Un réglage en cours de glissement : la piste suit tout de suite, le décor lointain après.
     applyConfig(pendingConfig, false)
     pendingConfig = null
+    scheduleSave()
   }
   // En pause, caméra immobile et rien en cours : l'image ne changerait pas, on ne la recalcule pas.
   const moving = playback.playing || idle.isAwake(now) || spray.liveCount() > 0
@@ -534,6 +586,17 @@ function showLine(line: LineConfig): SimulationResult {
   return result
 }
 
+/** Charge une ligne partagée par un lien dans la piste libre, et l'enregistre. */
+function loadSandboxLine(text: string): boolean {
+  const line = decodeLine(text)
+  if (!line) return false
+  panel.setLine(line)
+  applyConfig(line.config)
+  restart()
+  scheduleSave()
+  return true
+}
+
 /** Rend la piste libre telle qu'on l'avait laissée, avec sa lecture normale. */
 function restoreSandbox(): void {
   loopWindow = null
@@ -556,6 +619,7 @@ resizeStage(stage)
 applyConfig(config)
 startApp({
   showLine,
+  loadSandboxLine,
   restoreSandbox,
   getPlayback: () => playback,
   setPlayback: (changes) => {

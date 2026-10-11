@@ -28,6 +28,8 @@ export interface SceneFrame {
 export interface Simulator {
   /** Montre une piste hors de la piste libre, rejouée depuis le départ ; échoue si elle ne se simule pas. */
   readonly showLine: (line: LineConfig) => SimulationResult
+  /** Charge dans la piste libre une ligne partagée par un lien ; rend `false` si le texte n'est pas une ligne. */
+  readonly loadSandboxLine: (text: string) => boolean
   /** Revient à la piste libre telle qu'elle était, lecture normale. */
   readonly restoreSandbox: () => void
   readonly getPlayback: () => PlaybackState
@@ -116,6 +118,12 @@ export function startApp(simulator: Simulator): void {
     }
     lessonView.close()
     simulator.restoreSandbox()
+    if (route.view === 'sandbox' && route.line) {
+      simulator.loadSandboxLine(route.line)
+      // La ligne est chargée et enregistrée : l'adresse redevient celle de la piste libre, pour qu'un
+      // rechargement garde les réglages faits depuis au lieu de revenir au lien.
+      window.history.replaceState(null, '', routeHash({ view: 'sandbox' }))
+    }
     if (changed) simulator.setCamera(route.view === 'sandbox' ? 'side' : 'tv')
   }
 

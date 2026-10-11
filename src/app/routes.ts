@@ -4,7 +4,8 @@
  */
 export type Route =
   | { readonly view: 'menu' }
-  | { readonly view: 'sandbox' }
+  /** `line` : ligne partagée par un lien, à charger en arrivant. */
+  | { readonly view: 'sandbox'; readonly line?: string }
   | { readonly view: 'tutorials' }
   | { readonly view: 'lesson'; readonly lesson: string }
 
@@ -21,8 +22,9 @@ export function parseRoute(hash: string): Route {
     .filter((segment) => segment !== '')
     .map(decodeURIComponent)
   const [first, second, ...rest] = segments
-  if (first === SANDBOX_SEGMENT && second === undefined) return { view: 'sandbox' }
-  if (first !== TUTORIALS_SEGMENT || rest.length > 0) return { view: 'menu' }
+  if (rest.length > 0) return { view: 'menu' }
+  if (first === SANDBOX_SEGMENT) return second === undefined ? { view: 'sandbox' } : { view: 'sandbox', line: second }
+  if (first !== TUTORIALS_SEGMENT) return { view: 'menu' }
   return second === undefined ? { view: 'tutorials' } : { view: 'lesson', lesson: second }
 }
 
@@ -31,7 +33,7 @@ export function routeHash(route: Route): string {
     case 'menu':
       return '#/'
     case 'sandbox':
-      return `#/${SANDBOX_SEGMENT}`
+      return route.line ? `#/${SANDBOX_SEGMENT}/${encodeURIComponent(route.line)}` : `#/${SANDBOX_SEGMENT}`
     case 'tutorials':
       return `#/${TUTORIALS_SEGMENT}`
     case 'lesson':

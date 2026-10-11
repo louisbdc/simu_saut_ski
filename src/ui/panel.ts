@@ -50,6 +50,8 @@ export interface PanelLine {
 export interface Panel {
   /** Remplace les valeurs affichées, par exemple après un réglage automatique ou un scénario. */
   readonly setLine: (line: PanelLine) => void
+  /** Ligne affichée, avec le gabarit de chaque bosse et le scénario choisi. */
+  readonly getLine: () => Required<PanelLine>
 }
 
 const KICKER_LABELS: Readonly<Record<keyof KickerConfig, string>> = {
@@ -244,6 +246,7 @@ export function createPanel(initial: PanelLine, handlers: PanelHandlers): Panel 
 
   rebuild()
   return {
+    getLine: () => ({ config: sanitizeLine(draft), models: draft.kickers.map((_, index) => modelOf(index)), scenario }),
     setLine: (line: PanelLine): void => {
       draft = toDraft(line.config)
       if (line.models) models = [...line.models]

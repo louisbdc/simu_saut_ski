@@ -11,6 +11,7 @@ describe('routes', () => {
     expect(parseRoute('#/piste')).toEqual({ view: 'sandbox' })
     expect(parseRoute('#/tutos')).toEqual({ view: 'tutorials' })
     expect(parseRoute('#/tutos/spin360')).toEqual({ view: 'lesson', lesson: 'spin360' })
+    expect(parseRoute('#/piste/v1.abc_-9')).toEqual({ view: 'sandbox', line: 'v1.abc_-9' })
   })
 
   test('une ancre inconnue ramène au menu', () => {
@@ -24,6 +25,7 @@ describe('routes', () => {
   test.each<Route>([
     { view: 'menu' },
     { view: 'sandbox' },
+    { view: 'sandbox', line: 'v1.abc_-9' },
     { view: 'tutorials' },
     { view: 'lesson', lesson: 'backflip' },
   ])('l’ancre de %o se relit à l’identique', (route) => {
