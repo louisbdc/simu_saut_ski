@@ -143,6 +143,7 @@ function jointsFromPoints(points: RagdollPoints): Joints {
     skiLift: 0,
   })
   const toHead = points.head.clone().sub(points.neck)
+    skiPitch: 0,
   return {
     pelvis: points.pelvis,
     neck: points.neck,
@@ -376,4 +377,8 @@ export function createSkier(): Skier {
       placePoles(dress(joints))
     },
   }
+        // Tail ou nose grab : le ski bascule autour de la cheville, talon ou spatule vers la main.
+        feet[index].rotateZ(side.skiPitch)
+        feet[index].position.x += ANKLE_HEIGHT * Math.sin(side.skiPitch)
+        feet[index].position.y += ANKLE_HEIGHT * (1 - Math.cos(side.skiPitch))
 }

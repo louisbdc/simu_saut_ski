@@ -29,6 +29,9 @@ const GRAB_MISTAKES: readonly Mistake[] = [
   },
 ]
 
+const UNSOURCED_GRAB =
+  'Fiche écrite à partir de la définition du grab, sans tutoriel de référence : à valider avec un entraîneur.'
+
 const grabLesson = (id: string, summary: string, prerequisites: readonly string[], air: PhaseLesson): Lesson => ({
   id,
   group: 'bases',
@@ -110,4 +113,30 @@ export const BASES: readonly Lesson[] = [
       { part: 'Autre bras', text: 'Écarté, il tient l’équilibre.' },
     ],
   }),
+  {
+    ...grabLesson('tail', 'La main part en arrière attraper le talon du ski du même côté, talons remontés vers elle.', ['safety'], {
+      title: 'Tail grab',
+      caption: 'Remonte les talons vers la main : c’est le ski qui vient à elle.',
+      cues: [
+        { part: 'Jambes', text: 'Les genoux plient et les talons des skis remontent derrière toi.' },
+        { part: 'Main', text: 'Elle part en arrière et saisit le ski du même côté, derrière la chaussure.' },
+        { part: 'Buste', text: 'Redressé et légèrement tourné vers la main, sans se pencher en arrière.' },
+        { part: 'Autre bras', text: 'Devant toi, il tient l’équilibre.' },
+      ],
+    }),
+    caveat: UNSOURCED_GRAB,
+  },
+  {
+    ...grabLesson('nose', 'La main part en avant attraper la spatule du ski du même côté, spatules remontées vers elle.', ['safety'], {
+      title: 'Nose grab',
+      caption: 'Penche le buste sur les skis et remonte les spatules vers la main.',
+      cues: [
+        { part: 'Skis', text: 'Les spatules remontent vers toi.' },
+        { part: 'Buste', text: 'Il se penche franchement sur les skis.' },
+        { part: 'Main', text: 'Elle part en avant et saisit le ski du même côté, devant la chaussure.' },
+        { part: 'Autre bras', text: 'En arrière, il fait contrepoids.' },
+      ],
+    }),
+    caveat: UNSOURCED_GRAB,
+  },
 ]

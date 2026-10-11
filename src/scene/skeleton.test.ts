@@ -103,13 +103,14 @@ describe('articulations du skieur', () => {
     expect(left.hand.z).toBeCloseTo(-right.hand.z, 9)
   })
 
-  test.each(['safety', 'mute', 'japan'])('%s : la main droite arrive sur le ski', (id) => {
+  test.each(['safety', 'mute', 'japan', 'tail', 'nose', 'spin360tail'])('%s : la main droite arrive sur le ski', (id) => {
     const plan = timing(id, AIR_TIME)
 
     const right = solveJoints(bodyPose(plan, AIR_TIME / 2, 0.24)).sides[1]
 
     expect(right.hand.distanceTo(right.handTarget)).toBeLessThan(0.05)
-    expect(right.handTarget.y).toBeLessThan(0.15)
+    // Skis à plat, la prise est au ras de la neige ; tail et nose la remontent en basculant le ski.
+    expect(right.handTarget.y).toBeLessThan(right.skiPitch === 0 ? 0.15 : 0.6)
   })
 
   test('safety : la main prend le ski droit par l’extérieur, devant la chaussure', () => {
@@ -160,13 +161,13 @@ describe('articulations du skieur', () => {
     expect(wound.sides[1].shoulder.x).toBeLessThan(neutral.sides[1].shoulder.x)
     expect(wound.sides[0].shoulder.x).toBeGreaterThan(neutral.sides[0].shoulder.x)
   })
-  test.each(['safety', 'mute', 'japan'])('%s à droite : c’est la main gauche qui arrive sur le ski', (id) => {
+  test.each(['safety', 'mute', 'japan', 'tail', 'nose'])('%s à droite : c’est la main gauche qui arrive sur le ski', (id) => {
     const plan = timing(`${id}@d`, AIR_TIME)
 
     const [left, right] = solveJoints(bodyPose(plan, AIR_TIME / 2, 0.24)).sides
 
     expect(left.hand.distanceTo(left.handTarget)).toBeLessThan(0.05)
-    expect(left.handTarget.y).toBeLessThan(0.15)
+    expect(left.handTarget.y).toBeLessThan(left.skiPitch === 0 ? 0.15 : 0.6)
     // La main droite, libre, est restée là où le bras la porte.
     expect(right.hand.distanceTo(right.handTarget)).toBeLessThan(1e-9)
   })
@@ -185,5 +186,27 @@ describe('articulations du skieur', () => {
 
     expect(left.skiLift).toBeGreaterThan(0)
     expect(right.skiLift).toBe(0)
+  })
+  test('tail : les talons des skis remontent et la main les attrape derrière la chaussure', () => {
+    const right = solveJoints(bodyPose(timing('tail', AIR_TIME), AIR_TIME / 2, 0.24)).sides[1]
+
+    expect(right.skiPitch).toBeLessThan(-0.3)
+    expect(right.handTarget.x).toBeLessThan(-0.3)
+    expect(right.handTarget.y).toBeGreaterThan(ANKLE_HEIGHT)
+  })
+
+  test('nose : les spatules remontent et la main les attrape devant la chaussure', () => {
+    const right = solveJoints(bodyPose(timing('nose', AIR_TIME), AIR_TIME / 2, 0.24)).sides[1]
+
+    expect(right.skiPitch).toBeGreaterThan(0.3)
+    expect(right.handTarget.x).toBeGreaterThan(0.4)
+    expect(right.handTarget.y).toBeGreaterThan(ANKLE_HEIGHT)
+  })
+
+  test('les skis ne basculent que pendant le grab : à plat à la lèvre et à la réception', () => {
+    const plan = timing('tail', AIR_TIME)
+
+    expect(solveJoints(bodyPose(plan, 0, 0.24)).sides[1].skiPitch).toBeCloseTo(0, 9)
+    expect(solveJoints(bodyPose(plan, AIR_TIME, 0.24)).sides[1].skiPitch).toBeCloseTo(0, 9)
   })
 })

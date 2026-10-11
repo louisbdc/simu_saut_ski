@@ -14,6 +14,7 @@ const BONE_PREFIX = 'mixamorig'
 /** Le mannequin regarde vers +z ; le skieur avance vers +x. */
 const FACING = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI / 2)
 const UP = new THREE.Vector3(0, 1, 0)
+const LATERAL = new THREE.Vector3(0, 0, 1)
 /** Le bassin ne suit qu'en partie l'inclinaison du buste : le reste est pris par la colonne. */
 const PELVIS_FOLLOW = 0.6
 /** Position du casque par rapport à la base du crâne, en mètres : vers le haut, vers l'avant. */
@@ -310,8 +311,9 @@ function createModelBody(model: THREE.Object3D): SkierBody {
         aim(side.thigh, direction(target.hip, target.knee))
         aim(side.shin, direction(target.knee, target.ankle))
         const yaw = new THREE.Quaternion().setFromAxisAngle(UP, target.skiYaw)
-        // Le pied reste à plat dans la chaussure, et tourne avec le ski quand ils se croisent.
-        setWorldQuaternion(side.foot, frameQuaternion.clone().multiply(yaw).multiply(FACING))
+        // Le pied reste à plat dans la chaussure : il tourne avec le ski quand ils se croisent, et bascule avec lui.
+        const pitch = new THREE.Quaternion().setFromAxisAngle(LATERAL, target.skiPitch)
+        setWorldQuaternion(side.foot, frameQuaternion.clone().multiply(yaw).multiply(pitch).multiply(FACING))
         reach(side, frame.localToWorld(target.handTarget.clone()), SIDE_SIGNS[index], frameQuaternion)
         holdPole(side, poleDirection(SIDE_SIGNS[index], frameQuaternion))
       })

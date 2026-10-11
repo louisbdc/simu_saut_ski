@@ -75,4 +75,14 @@ describe('masses du skieur', () => {
     expect(crossed.mass).toBeCloseTo(tucked.mass, 9)
     expect(crossed.center.y).toBeCloseTo(tucked.center.y, 2)
   })
+
+  test('basculer les skis ne change pas la masse, et remonte le centre de gravité du côté levé', () => {
+    const tailsUp = propertiesOf({ ...ridePose(0), tuck: 1, skiPitch: -0.6 })
+    const tipsUp = propertiesOf({ ...ridePose(0), tuck: 1, skiPitch: 0.6 })
+
+    expect(tailsUp.mass).toBeCloseTo(tucked.mass, 9)
+    expect(tipsUp.mass).toBeCloseTo(tucked.mass, 9)
+    expect(tailsUp.center.x).toBeLessThan(tipsUp.center.x + 1e-9)
+    expect(tipsUp.center.y).toBeGreaterThan(tucked.center.y)
+  })
 })

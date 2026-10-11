@@ -69,14 +69,33 @@ const HAND_OFFSETS: Readonly<Record<Exclude<ArmPreset, 'knees'>, readonly [numbe
  * - mute : avant du ski gauche, qui est passé devant le ski droit en se croisant ;
  * - japan : ski gauche derrière la chaussure, la main passant derrière la jambe droite.
  */
-const GRAB_POINTS: Readonly<Record<Exclude<GrabKind, 'none'>, THREE.Vector3>> = {
+const GRAB_POINTS: Readonly<Record<'safety' | 'mute' | 'japan', THREE.Vector3>> = {
   safety: new THREE.Vector3(0.22, 0.09, LEG_HALF_WIDTH + 0.07),
   mute: new THREE.Vector3(0.27, 0.11, 0.03),
   japan: new THREE.Vector3(-0.28, 0.1, -0.04),
 }
+/** Tail et nose : distance de la prise à la cheville le long du ski, en mètres (négatif : vers le talon). */
+const SKI_GRIPS = { tail: -0.55, nose: 0.6 } as const
+/** Hauteur de la prise au-dessus de la semelle, et son écart vers l'extérieur de la jambe. */
+const GRIP_ABOVE_BASE = 0.05
+const GRIP_OUTSIDE = 0.04
+
+/**
+ * Prise sur le ski droit, à une distance donnée de la cheville. Elle suit la bascule du ski : c'est
+ * en remontant le talon ou la spatule vers la main que le skieur l'atteint.
+ */
+function skiGrip(along: number, skiPitch: number): THREE.Vector3 {
+  const below = GRIP_ABOVE_BASE - ANKLE_HEIGHT
+  return new THREE.Vector3(
+    along * Math.cos(skiPitch) - below * Math.sin(skiPitch),
+    ANKLE_HEIGHT + along * Math.sin(skiPitch) + below * Math.cos(skiPitch),
+    LEG_HALF_WIDTH + GRIP_OUTSIDE,
+  )
+}
+
 /** Point de prise pour la main d'un côté : celui de la main droite, ou son reflet pour la gauche. */
-function grabPoint(grab: Exclude<GrabKind, 'none'>, side: number): THREE.Vector3 {
-  const point = GRAB_POINTS[grab]
+function grabPoint(grab: Exclude<GrabKind, 'none'>, side: number, skiPitch: number): THREE.Vector3 {
+  const point = grab === 'tail' || grab === 'nose' ? skiGrip(SKI_GRIPS[grab], skiPitch) : GRAB_POINTS[grab]
   return side === 1 ? point : new THREE.Vector3(point.x, point.y, -point.z)
 }
 
@@ -99,6 +118,8 @@ export interface SideJoints {
   /** Rotation du ski autour de la verticale, en radians (skis croisés), et son décalage en hauteur. */
   readonly skiYaw: number
   readonly skiLift: number
+  /** Bascule du ski autour de la cheville, en radians : positif = spatule vers le haut. */
+  readonly skiPitch: number
 }
 
 export interface Joints {
@@ -225,7 +246,7 @@ export function solveJoints(body: BodyPose): Joints {
     const grabbing = side === grabSide && body.grab !== 'none'
     // La main part de là où elle se trouve : aucun saut de position quand le grab commence.
     const handTarget = grabbing
-      ? freeTarget.clone().lerp(grabPoint(body.grab, grabSide), clamp(body.grabAmount, 0, 1))
+      ? freeTarget.clone().lerp(grabPoint(body.grab, grabSide, body.skiPitch), clamp(body.grabAmount, 0, 1))
       : freeTarget
 
     const toTarget = handTarget.clone().sub(restShoulder)
@@ -244,6 +265,7 @@ export function solveJoints(body: BodyPose): Joints {
       // Chaque spatule part vers l'autre ski : les skis se croisent devant les chaussures.
       skiYaw: side * body.skiCross,
       skiLift: side === grabSide ? CROSSED_SKI_LIFT * crossed : 0,
+      skiPitch: body.skiPitch,
     }
   }
 

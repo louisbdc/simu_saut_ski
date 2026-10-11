@@ -258,6 +258,16 @@ const BEATS: Readonly<Record<string, readonly BeatSpec[]>> = {
     ['hands', 'La main passe sous le genou et prend le ski opposé, sous la chaussure'],
     ['chest', 'Dos creusé'],
   ]),
+  tail: grab('Tail grab', 'Remonte les talons des skis derrière toi et envoie la main en arrière : le ski vient à sa rencontre, tu ne te penches pas pour le chercher.', [
+    ['knees', 'Pliés, talons des skis remontés'],
+    ['hands', 'La main prend le ski du même côté, derrière la chaussure'],
+    ['chest', 'Redressé, tourné vers la main'],
+  ]),
+  nose: grab('Nose grab', 'Penche le buste sur les skis et remonte les spatules : la main part en avant saisir le ski devant la chaussure.', [
+    ['skis', 'Spatules remontées vers toi'],
+    ['hands', 'La main prend le ski du même côté, devant la chaussure'],
+    ['chest', 'Penché sur les skis'],
+  ]),
   spin180: [
     IN_LINE,
     KICK_ENTRY,

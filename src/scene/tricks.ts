@@ -12,9 +12,11 @@ export type TrickFamily = 'straight' | 'spin' | 'backflip' | 'frontflip' | 'cork
 /**
  * Grabs : safety = la main attrape le ski du même côté, sous la chaussure ; mute = la main attrape
  * le ski opposé devant la fixation, skis croisés en X ; japan = la main passe derrière la jambe
- * pour attraper le ski opposé, skis ramenés derrière et dos creusé.
+ * pour attraper le ski opposé, skis ramenés derrière et dos creusé ; tail = la main part en arrière
+ * attraper le talon du ski du même côté, talons remontés ; nose = elle part en avant attraper la
+ * spatule, spatules remontées.
  */
-export type GrabKind = 'none' | 'safety' | 'mute' | 'japan'
+export type GrabKind = 'none' | 'safety' | 'mute' | 'japan' | 'tail' | 'nose'
 
 export interface Trick {
   readonly id: string
@@ -73,11 +75,14 @@ const ROWS: readonly Row[] = [
   ['safety', 'Safety grab', 'straight', 0, 0, 1, 'safety'],
   ['mute', 'Mute grab', 'straight', 0, 0, 1, 'mute'],
   ['japan', 'Japan grab', 'straight', 0, 0, 1, 'japan'],
+  ['tail', 'Tail grab', 'straight', 0, 0, 1, 'tail'],
+  ['nose', 'Nose grab', 'straight', 0, 0, 1, 'nose'],
   ['spin180', '180', 'spin', 0, 0.5, 0.45, 'none'],
   ['spin360', '360', 'spin', 0, 1, 0.55, 'none'],
   ['spin360safety', '360 safety', 'spin', 0, 1, 1, 'safety'],
   ['spin360mute', '360 mute', 'spin', 0, 1, 1, 'mute'],
   ['spin360japan', '360 japan', 'spin', 0, 1, 1, 'japan'],
+  ['spin360tail', '360 tail', 'spin', 0, 1, 1, 'tail'],
   ['spin540', '540', 'spin', 0, 1.5, 0.6, 'none'],
   ['spin540mute', '540 mute', 'spin', 0, 1.5, 1, 'mute'],
   ['spin720', '720', 'spin', 0, 2, 0.65, 'none'],
@@ -132,7 +137,7 @@ const CUSTOM_RIGHT = 'd'
 const RIGHT_SUFFIX = '@d'
 const RIGHT_LABEL = ' à droite'
 export const CUSTOM_TRICK_LIMITS = { flips: 20, spinDegrees: 36000 } as const
-export const GRABS: readonly GrabKind[] = ['none', 'safety', 'mute', 'japan']
+export const GRABS: readonly GrabKind[] = ['none', 'safety', 'mute', 'japan', 'tail', 'nose']
 /** On se pose de face ou en switch : la vrille se compte par demi-tours. */
 const HALF_TURN_DEGREES = 180
 const COUNT_NAMES = ['', '', 'Double ', 'Triple ', 'Quadruple '] as const

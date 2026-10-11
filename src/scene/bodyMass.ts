@@ -96,15 +96,16 @@ export function massPoints(joints: Joints): MassPoint[] {
 
   const points: MassPoint[] = [{ mass: MASS.head, position: joints.head.clone() }, ...trunk]
   joints.sides.forEach((side, index) => {
-    // Le ski tourne autour de la verticale quand les skis se croisent.
-    const axisX = Math.cos(side.skiYaw)
-    const axisZ = -Math.sin(side.skiYaw)
-    const centerX = side.ankle.x + axisX * SKI_CENTER_AHEAD
-    // Le ski reste horizontal : son axe n'a pas de composante verticale.
-    const centerY = SKI_HEIGHT + side.skiLift
-    const centerZ = side.ankle.z + axisZ * SKI_CENTER_AHEAD
-    const tail = { x: centerX + axisX * (-SKI_LENGTH / 2), y: centerY, z: centerZ + axisZ * (-SKI_LENGTH / 2) }
-    const tip = { x: centerX + axisX * (SKI_LENGTH / 2), y: centerY, z: centerZ + axisZ * (SKI_LENGTH / 2) }
+    // Le ski tourne autour de la verticale quand les skis se croisent, et bascule autour de la cheville
+    // pour un tail ou un nose grab : son axe gagne alors une composante verticale.
+    const level = Math.cos(side.skiPitch)
+    const axisX = Math.cos(side.skiYaw) * level
+    const axisY = Math.sin(side.skiPitch)
+    const axisZ = -Math.sin(side.skiYaw) * level
+    const baseY = SKI_HEIGHT + side.skiLift
+    const along = (distance: number) => ({ x: side.ankle.x + axisX * distance, y: baseY + axisY * distance, z: side.ankle.z + axisZ * distance })
+    const tail = along(SKI_CENTER_AHEAD - SKI_LENGTH / 2)
+    const tip = along(SKI_CENTER_AHEAD + SKI_LENGTH / 2)
 
     pushRod(points, MASS.thigh, side.hip, side.knee)
     pushRod(points, MASS.shank, side.knee, side.ankle)

@@ -55,6 +55,8 @@ export interface BodyPose {
   readonly armSweep: number
   /** Croisement des skis en X, en radians par ski. */
   readonly skiCross: number
+  /** Bascule des skis autour des chevilles, en radians : positif = spatules vers le haut. */
+  readonly skiPitch: number
   /** Tête basculée vers l'arrière (positif) ou menton rentré (négatif), en radians. */
   readonly headPitch: number
   /** Tête tournée dans le sens de la vrille, en radians. */
@@ -106,6 +108,12 @@ const MUTE_SKI_CROSS = 0.6
  * dans un sens et son buste dans l'autre (conservation du moment cinétique).
  */
 const JAPAN = { lean: -1.05, twist: -0.55, headPitch: 0.2 }
+/**
+ * Tail : talons des skis remontés vers la main qui part en arrière, buste redressé et tourné vers elle.
+ * Nose : spatules remontées vers la main qui part en avant, buste penché sur les skis, jambes moins pliées.
+ */
+const TAIL = { skiPitch: -0.6, lean: -0.35, twist: -0.35 }
+const NOSE = { skiPitch: 0.6, lean: 0.5, tuck: 0.7 }
 /** Un grab demande de remonter les genoux à fond, quel que soit le temps de vol. */
 const GRAB_TUCK = 1
 
@@ -122,6 +130,7 @@ const NEUTRAL: BodyPose = {
   stance: 0,
   armSweep: 0,
   skiCross: 0,
+  skiPitch: 0,
   headPitch: 0,
   headYaw: 0,
   arms: { ...NO_ARMS, ride: 1 },
@@ -145,7 +154,7 @@ const mix = (from: number, to: number, ratio: number): number => from + (to - fr
 
 function mixPose(from: BodyPose, to: BodyPose, ratio: number): BodyPose {
   const number = (
-    key: 'flex' | 'tuck' | 'layback' | 'lean' | 'twist' | 'stance' | 'armSweep' | 'skiCross' | 'headPitch' | 'headYaw' | 'grabAmount',
+    key: 'flex' | 'tuck' | 'layback' | 'lean' | 'twist' | 'stance' | 'armSweep' | 'skiCross' | 'skiPitch' | 'headPitch' | 'headYaw' | 'grabAmount',
   ): number =>
     mix(from[key], to[key], ratio)
   return {
@@ -157,6 +166,7 @@ function mixPose(from: BodyPose, to: BodyPose, ratio: number): BodyPose {
     stance: number('stance'),
     armSweep: number('armSweep'),
     skiCross: number('skiCross'),
+    skiPitch: number('skiPitch'),
     headPitch: number('headPitch'),
     headYaw: number('headYaw'),
     arms: {
@@ -286,6 +296,10 @@ function grabChanges(grab: GrabKind): PoseChanges {
       return { tuck: GRAB_TUCK, skiCross: MUTE_SKI_CROSS, grab, grabAmount: 1, arms: { back: 1 } }
     case 'japan':
       return { tuck: GRAB_TUCK, ...JAPAN, grab, grabAmount: 1, arms: { wide: 0.6, up: 0.4 } }
+    case 'tail':
+      return { tuck: GRAB_TUCK, ...TAIL, grab, grabAmount: 1, arms: { wide: 0.7, forward: 0.3 } }
+    case 'nose':
+      return { ...NOSE, grab, grabAmount: 1, arms: { back: 0.6, wide: 0.4 } }
   }
 }
 
@@ -305,6 +319,9 @@ function backflipPose(compactness: number, tuckMax: number): BodyPose {
   return mixPose(OPEN_BACKFLIP, tucked, smooth(tightness))
 }
 
+/** Grabs dont la prise fixe l'inclinaison du buste. */
+const SETS_OWN_LEAN: readonly GrabKind[] = ['japan', 'tail', 'nose']
+
 const leanCache = new Map<string, number>()
 
 /**
@@ -313,7 +330,7 @@ const leanCache = new Map<string, number>()
  * une vrille propre fait ce réglage d'instinct.
  */
 function balancedLean(shape: BodyPose): number {
-  const key = [shape.tuck, shape.twist, shape.skiCross, shape.grab, shape.grabAmount, ...Object.values(shape.arms)].join('|')
+  const key = [shape.tuck, shape.twist, shape.skiCross, shape.skiPitch, shape.grab, shape.grabAmount, ...Object.values(shape.arms)].join('|')
   const cached = leanCache.get(key)
   if (cached !== undefined) return cached
 
@@ -352,8 +369,8 @@ function heldPose(trick: Trick, compactness: number): BodyPose {
       // La tête mène la rotation ; sans grab, les bras restent contenus, coudes pliés, mains devant le
       // ventre. Écartés à hauteur d'épaules, ils freinent la vrille et dessinent un « T ».
       const shape = pose({ tuck, twist: 0.15, headYaw: 0.6, arms: { in: 0.7, ride: 0.3 }, ...grab })
-      // Le japan impose son buste ; sinon le skieur se place autour de son axe de vrille.
-      return trick.grab === 'japan' ? shape : { ...shape, lean: balancedLean(shape) }
+      // Japan, tail et nose imposent leur buste ; sinon le skieur se place autour de son axe de vrille.
+      return SETS_OWN_LEAN.includes(trick.grab) ? shape : { ...shape, lean: balancedLean(shape) }
     }
     case 'frontflip':
       return pose({ tuck, headPitch: -0.35, arms: { knees: 1 } })
