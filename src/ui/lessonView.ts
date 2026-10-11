@@ -6,7 +6,7 @@ import type { KickerReport, LineConfig } from '../physics/types'
 import { sampleAt, type TimeWindow } from '../scene/playback'
 import type { RagdollPoints } from '../scene/ragdoll'
 import { createTutorialStage, type StageTrick } from '../scene/tutorialStage'
-import { getTrick } from '../scene/tricks'
+import { getTrick, hasDirection } from '../scene/tricks'
 import { resolveBeats, rotationTrack, type Beat, type PoseAxes } from '../tutorials/beats'
 import { getBeats } from '../tutorials/content/beats'
 import { CUE_LABELS, PHASE_RATES, cuesFor, ease, turnSign, type CueKind } from '../tutorials/direction'
@@ -204,7 +204,10 @@ export function createLessonView(simulator: Simulator): LessonView {
   const cinemaButton = el('button', { text: 'Ciné', attributes: { type: 'button', 'aria-pressed': 'true', title: 'Caméra de tuto : un plan par étape' } })
   const cameras = el('div', { className: 'cameras', attributes: { role: 'group', 'aria-label': 'Caméra' } }, [cinemaButton, ...CAMERAS.map(([mode, label]) => el('button', { text: label, attributes: { type: 'button', 'data-camera': mode, 'aria-pressed': 'false' } }))])
   const bar = el('div', { className: 'bar' })
-  const barItems = (freezeToggle: HTMLElement): readonly Node[] => [previousButton, playButton, nextButton, freezeToggle, el('label', { className: 'field', text: 'Vitesse ' }, [rateSelect]), cameras]
+  const directionButton = button('')
+  /** La figure est montrée à droite ; le choix vaut d'une leçon à l'autre. */
+  let rightward = false
+  const barItems = (freezeToggle: HTMLElement): readonly Node[] => [previousButton, playButton, nextButton, freezeToggle, directionButton, el('label', { className: 'field', text: 'Vitesse ' }, [rateSelect]), cameras]
   const rail = el('section', { attributes: { id: 'lesson-rail', 'aria-label': 'Étapes du saut' } }, [lowerThird, profileSlot, steps, bar])
 
   const stage = createTutorialStage()
@@ -272,7 +275,9 @@ export function createLessonView(simulator: Simulator): LessonView {
   const open = (lesson: Lesson): void => {
     close()
     try {
-      const line = lessonLine(lesson)
+      directionButton.hidden = !hasDirection(getTrick(lesson.id))
+      directionButton.textContent = rightward ? 'Sens : droite' : 'Sens : gauche'
+      const line = lessonLine(lesson, rightward && !directionButton.hidden)
       const result = simulator.showLine(line)
       const windows = phaseWindows(result.samples, result.reports[0])
       const profile = createJumpProfile(result, windows, select)
@@ -328,6 +333,11 @@ export function createLessonView(simulator: Simulator): LessonView {
   rail.prepend(beats.card)
   bar.append(...barItems(beats.toggle))
 
+  directionButton.addEventListener('click', () => {
+    if (!session) return
+    rightward = !rightward
+    open(session.lesson)
+  })
   wholeButton.addEventListener('click', () => select('all'))
   stepButtons.forEach((item) => item.element.addEventListener('click', () => select(item.phase)))
   previousButton.addEventListener('click', () => step(-1))

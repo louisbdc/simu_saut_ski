@@ -172,6 +172,8 @@ export function createSkier(): Skier {
   rig.add(simple.object)
   let detailed: SkierBody | null = null
   let farView = false
+  /** La dernière figure tournait-elle à droite ? En switch, le skieur regarde par-dessus cette épaule-là. */
+  let turnsRight = false
   /** Corps affiché : le mannequin de près, le corps simplifié de loin ou tant que le mannequin manque. */
   const shownBody = (): SkierBody => (detailed && !farView ? detailed : simple)
   const showBody = (): void => {
@@ -307,12 +309,14 @@ export function createSkier(): Skier {
         const target = clamp(GROUND_FLEX + FLEX_PER_G * (sample.gLoad - 1), MIN_GROUND_FLEX, MAX_GROUND_FLEX)
         rideFlex = lerp(rideFlex, target, 1 - Math.exp(-FLEX_RATE * Math.max(0, elapsed)))
       }
+      // Le sens de la dernière figure reste celui du regard en switch jusqu'à la suivante.
+      if (jump) turnsRight = jump.plan.trick.mirrored === true
       const look = jump
         ? switchLookAmount(jump.switchBefore, jump.switchAfter, jump.timeFromTakeoff, jump.plan.airTime)
         : Number(ridingSwitch)
       const posture =
         seat?.posture ??
-        withSwitchLook(jump ? bodyPose(jump.plan, jump.timeFromTakeoff, rideFlex) : ridePose(rideFlex), look)
+        withSwitchLook(jump ? bodyPose(jump.plan, jump.timeFromTakeoff, rideFlex) : ridePose(rideFlex), look, turnsRight)
 
       const joints = solveJoints(posture)
       const center = massProperties(massPoints(joints)).center
@@ -364,7 +368,8 @@ export function createSkier(): Skier {
       root.quaternion.copy(orientation)
 
       joints.sides.forEach((side, index) => {
-        feet[index].rotation.set(0, side.skiYaw, 0)
+        // Quand le corps bascule dans l'axe des skis, ce sont les chevilles qui plient : les skis restent à plat.
+        feet[index].rotation.set(0, side.skiYaw, -(seat?.pitch ?? 0))
         feet[index].position.set(0, side.skiLift, side.ankle.z)
       })
       lastJoints = joints

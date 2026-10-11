@@ -301,3 +301,41 @@ describe('lancer d’une vrille sur le kick', () => {
     expect(Math.abs(left.hand.x - right.hand.x)).toBeGreaterThan(0.2)
   })
 })
+
+describe('figure faite à droite', () => {
+  test('l’armé, le lancer et la tête partent dans l’autre sens', () => {
+    const left = planFor('spin720')
+    const right = planFor('spin720@d')
+
+    expect(bodyPose(right, -0.28, RIDE_FLEX).twist).toBeCloseTo(-bodyPose(left, -0.28, RIDE_FLEX).twist, 9)
+    expect(bodyPose(right, 0, RIDE_FLEX).armSweep).toBeCloseTo(-bodyPose(left, 0, RIDE_FLEX).armSweep, 9)
+    expect(bodyPose(right, AIR_TIME / 2, RIDE_FLEX).headYaw).toBeLessThan(-0.5)
+  })
+
+  test('le reste de la posture ne change pas : même groupé, même flexion, mêmes appuis', () => {
+    const left = bodyPose(planFor('spin360mute'), AIR_TIME / 2, RIDE_FLEX)
+    const right = bodyPose(planFor('spin360mute@d'), AIR_TIME / 2, RIDE_FLEX)
+
+    expect(right.tuck).toBe(left.tuck)
+    expect(right.skiCross).toBe(left.skiCross)
+    expect(right.lean).toBeCloseTo(left.lean, 9)
+    expect(right.mirrored).toBe(true)
+    expect(left.mirrored).toBe(false)
+  })
+
+  test('le grab est pris et lâché par la même main', () => {
+    const plan = planFor('safety@d')
+
+    expect(bodyPose(plan, AIR_TIME / 2, RIDE_FLEX).mirrored).toBe(true)
+    expect(bodyPose(plan, AIR_TIME - 0.2, RIDE_FLEX).mirrored).toBe(true)
+  })
+
+  test('en switch, le regard passe par-dessus l’épaule du côté où l’on tourne', () => {
+    const left = withSwitchLook(ridePose(RIDE_FLEX), 1)
+    const right = withSwitchLook(ridePose(RIDE_FLEX), 1, true)
+
+    expect(right.headYaw).toBeCloseTo(-left.headYaw, 9)
+    expect(right.twist).toBeCloseTo(-left.twist, 9)
+    expect(right.lean).toBeCloseTo(left.lean, 9)
+  })
+})

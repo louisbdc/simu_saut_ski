@@ -74,6 +74,12 @@ const GRAB_POINTS: Readonly<Record<Exclude<GrabKind, 'none'>, THREE.Vector3>> = 
   mute: new THREE.Vector3(0.27, 0.11, 0.03),
   japan: new THREE.Vector3(-0.28, 0.1, -0.04),
 }
+/** Point de prise pour la main d'un côté : celui de la main droite, ou son reflet pour la gauche. */
+function grabPoint(grab: Exclude<GrabKind, 'none'>, side: number): THREE.Vector3 {
+  const point = GRAB_POINTS[grab]
+  return side === 1 ? point : new THREE.Vector3(point.x, point.y, -point.z)
+}
+
 /** Jeu de l'épaule : elle s'avance vers une cible un peu trop loin pour le bras seul. */
 const SHOULDER_REACH = 0.07
 /** Le ski droit passe par-dessus le gauche quand ils se croisent. */
@@ -213,11 +219,13 @@ export function solveJoints(body: BodyPose): Joints {
           )
         : targets.ride.clone(),
     )
-    // C'est la main droite qui grabbe ; la gauche reste libre pour l'équilibre.
-    const grabbing = side === 1 && body.grab !== 'none'
+    // C'est la main droite qui grabbe, la gauche restant libre pour l'équilibre ; l'inverse quand la
+    // figure est faite de l'autre côté.
+    const grabSide = body.mirrored ? -1 : 1
+    const grabbing = side === grabSide && body.grab !== 'none'
     // La main part de là où elle se trouve : aucun saut de position quand le grab commence.
     const handTarget = grabbing
-      ? freeTarget.clone().lerp(GRAB_POINTS[body.grab], clamp(body.grabAmount, 0, 1))
+      ? freeTarget.clone().lerp(grabPoint(body.grab, grabSide), clamp(body.grabAmount, 0, 1))
       : freeTarget
 
     const toTarget = handTarget.clone().sub(restShoulder)
@@ -235,7 +243,7 @@ export function solveJoints(body: BodyPose): Joints {
       handTarget,
       // Chaque spatule part vers l'autre ski : les skis se croisent devant les chaussures.
       skiYaw: side * body.skiCross,
-      skiLift: side === 1 ? CROSSED_SKI_LIFT * crossed : 0,
+      skiLift: side === grabSide ? CROSSED_SKI_LIFT * crossed : 0,
     }
   }
 

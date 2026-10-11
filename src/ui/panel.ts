@@ -7,7 +7,11 @@ import {
   GRABS,
   TRICKS,
   customTrickId,
+  getTrick,
+  hasDirection,
+  isRightward,
   parseCustomTrick,
+  withDirection,
   type CustomTrickSettings,
   type TrickFamily,
 } from '../scene/tricks'
@@ -93,6 +97,11 @@ const NEW_CUSTOM_TRICK: CustomTrickSettings = { flips: 1, spinDegrees: 0, grab: 
 const CUSTOM_LABEL = 'Figure perso…'
 const NO_GRAB_LABEL = 'Aucun'
 const DRAWER_OPEN = 'open'
+/** Sens d'une vrille, ou main qui attrape : à gauche d'office, à droite au choix. */
+const DIRECTIONS: readonly (readonly [label: string, right: boolean])[] = [
+  ['Vers la gauche', false],
+  ['Vers la droite', true],
+]
 
 const option = (value: string, label: string, selected: boolean): HTMLOptionElement => {
   const item = el('option', { text: label, attributes: { value } })
@@ -208,7 +217,9 @@ export function createPanel(initial: PanelLine, handlers: PanelHandlers): Panel 
   const trickPicker = (index: number): HTMLElement => {
     const current = state.config.tricks[index]
     const custom = parseCustomTrick(current)
-    const picked = custom ? CUSTOM_TRICK_PREFIX : current
+    // La liste montre la figure ; son sens se choisit à côté.
+    const picked = custom ? CUSTOM_TRICK_PREFIX : withDirection(current, false)
+    const right = isRightward(current)
     const groups = FAMILY_GROUPS.map(([label, families]) => {
       const tricks = TRICKS.filter((trick) => families.includes(trick.family))
       const group = el('optgroup', {}, tricks.map((trick) => option(trick.id, trick.label, trick.id === picked)))
@@ -217,9 +228,16 @@ export function createPanel(initial: PanelLine, handlers: PanelHandlers): Panel 
     })
     const select = el('select', { attributes: { 'aria-label': 'Figure' } }, [...groups, option(CUSTOM_TRICK_PREFIX, CUSTOM_LABEL, picked === CUSTOM_TRICK_PREFIX)])
     select.addEventListener('change', () =>
-      change(withTrick(state, index, select.value === CUSTOM_TRICK_PREFIX ? customTrickId(custom ?? NEW_CUSTOM_TRICK) : select.value)),
+      change(withTrick(state, index, select.value === CUSTOM_TRICK_PREFIX ? customTrickId(custom ?? NEW_CUSTOM_TRICK) : withDirection(select.value, right))),
     )
-    const field = el('label', { className: 'panel-field', text: 'Figure ' }, [select])
+    const picker = el('label', { className: 'panel-field', text: 'Figure ' }, [select])
+    const sides = el('div', { className: 'chips', attributes: { role: 'group', 'aria-label': 'Sens de rotation' } }, DIRECTIONS.map(([label, toRight]) => {
+      const chip = button(label, () => change(withTrick(state, index, withDirection(current, toRight))))
+      chip.setAttribute('aria-pressed', String(toRight === right))
+      return chip
+    }))
+    // Un saut droit ou un salto pur n'ont ni gauche ni droite.
+    const field = hasDirection(getTrick(current)) ? el('div', { className: 'custom-trick' }, [picker, sides]) : picker
     if (!custom) return field
     const setCustom = (changes: Partial<CustomTrickSettings>): void => change(withTrick(state, index, customTrickId({ ...custom, ...changes })))
     const grab = el('select', { attributes: { 'aria-label': 'Grab' } }, GRABS.map((kind) => option(kind, kind === 'none' ? NO_GRAB_LABEL : kind, kind === custom.grab)))

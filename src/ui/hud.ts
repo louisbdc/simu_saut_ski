@@ -200,7 +200,7 @@ function buildRows(
       hint: 'Vitesse à laquelle le buste bascule (saltos) et les skis pivotent sur leurs carres (vrilles) en quittant la neige : ce sont ces gestes, faits sur le kick, qui créent l’élan.',
       cell: (report, i) =>
         report.reached && plans[i]
-          ? `buste ${Math.round((plans[i].set.lean * 180) / Math.PI)}°/s, pivot des skis ${Math.round((plans[i].takeoffPivotRate * 180) / Math.PI)}°/s`
+          ? `buste ${Math.round((plans[i].set.lean * 180) / Math.PI)}°/s, pivot des skis ${Math.round((Math.abs(plans[i].takeoffPivotRate) * 180) / Math.PI)}°/s`
           : '—',
     },
     {

@@ -8,6 +8,9 @@ import {
   nominalTurns,
   parseCustomTrick,
   stancesAlong,
+  withDirection,
+  isRightward,
+  hasDirection,
 } from './tricks'
 
 
@@ -106,5 +109,49 @@ describe('figure personnalisée', () => {
 
     expect(parseCustomTrick(customTrickId(settings))).toEqual(settings)
     expect(parseCustomTrick('backflip')).toBeNull()
+  })
+})
+
+describe('sens de rotation', () => {
+  test('une figure se demande à droite par son identifiant, sans doubler le catalogue', () => {
+    const right = getTrick(withDirection('spin360', true))
+
+    expect(right.id).toBe('spin360@d')
+    expect(right.spins).toBe(-1)
+    expect(right.mirrored).toBe(true)
+    expect(right.label).toBe('360 à droite')
+    expect(TRICKS.some((trick) => trick.id === right.id)).toBe(false)
+  })
+
+  test('à droite, la figure compte les mêmes tours et se pose dans le même sens de glisse', () => {
+    expect(nominalTurns(getTrick('spin540@d'))).toBe(nominalTurns(getTrick('spin540')))
+    expect(landsOpposite(getTrick('spin540@d'))).toBe(true)
+    expect(landsOpposite(getTrick('spin360@d'))).toBe(false)
+  })
+
+  test('on revient à gauche en retirant le sens de l’identifiant', () => {
+    expect(withDirection('spin360@d', false)).toBe('spin360')
+    expect(withDirection('spin360@d', true)).toBe('spin360@d')
+    expect(isRightward('spin360@d')).toBe(true)
+    expect(isRightward('spin360')).toBe(false)
+  })
+
+  test('un grab seul change de main, un saut sans vrille ni grab n’a pas de sens', () => {
+    expect(getTrick('safety@d').mirrored).toBe(true)
+    expect(getTrick('straight@d').id).toBe('straight')
+    expect(getTrick('backflip@d').id).toBe('backflip')
+    expect(hasDirection(getTrick('spin360'))).toBe(true)
+    expect(hasDirection(getTrick('backflip'))).toBe(false)
+  })
+
+  test('une figure perso garde son sens dans son identifiant', () => {
+    const id = customTrickId({ flips: 1, spinDegrees: 360, grab: 'mute', right: true })
+
+    expect(id).toBe('custom:1:360:mute:d')
+    expect(parseCustomTrick(id)?.right).toBe(true)
+    expect(getTrick(id).spins).toBe(-1)
+    expect(parseCustomTrick('custom:1:360:mute')?.right).toBeUndefined()
+    expect(withDirection('custom:1:360:mute', true)).toBe(id)
+    expect(withDirection(id, false)).toBe('custom:1:360:mute')
   })
 })

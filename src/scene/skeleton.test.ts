@@ -160,4 +160,30 @@ describe('articulations du skieur', () => {
     expect(wound.sides[1].shoulder.x).toBeLessThan(neutral.sides[1].shoulder.x)
     expect(wound.sides[0].shoulder.x).toBeGreaterThan(neutral.sides[0].shoulder.x)
   })
+  test.each(['safety', 'mute', 'japan'])('%s à droite : c’est la main gauche qui arrive sur le ski', (id) => {
+    const plan = timing(`${id}@d`, AIR_TIME)
+
+    const [left, right] = solveJoints(bodyPose(plan, AIR_TIME / 2, 0.24)).sides
+
+    expect(left.hand.distanceTo(left.handTarget)).toBeLessThan(0.05)
+    expect(left.handTarget.y).toBeLessThan(0.15)
+    // La main droite, libre, est restée là où le bras la porte.
+    expect(right.hand.distanceTo(right.handTarget)).toBeLessThan(1e-9)
+  })
+
+  test('à droite, le point de prise est le reflet de celui de gauche', () => {
+    const rightHanded = solveJoints(bodyPose(timing('safety', AIR_TIME), AIR_TIME / 2, 0.24)).sides[1].handTarget
+    const leftHanded = solveJoints(bodyPose(timing('safety@d', AIR_TIME), AIR_TIME / 2, 0.24)).sides[0].handTarget
+
+    expect(leftHanded.x).toBeCloseTo(rightHanded.x, 9)
+    expect(leftHanded.y).toBeCloseTo(rightHanded.y, 9)
+    expect(leftHanded.z).toBeCloseTo(-rightHanded.z, 9)
+  })
+
+  test('mute à droite : c’est le ski gauche qui passe dessus', () => {
+    const [left, right] = solveJoints(bodyPose(timing('mute@d', AIR_TIME), AIR_TIME / 2, 0.24)).sides
+
+    expect(left.skiLift).toBeGreaterThan(0)
+    expect(right.skiLift).toBe(0)
+  })
 })

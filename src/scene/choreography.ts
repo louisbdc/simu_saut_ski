@@ -64,6 +64,8 @@ export interface BodyPose {
   /** Grab en cours et son avancement, de 0 (main libre) à 1 (main sur le ski). */
   readonly grab: GrabKind
   readonly grabAmount: number
+  /** Figure faite de l'autre côté : c'est la main gauche qui attrape, et le ski gauche qui passe dessus. */
+  readonly mirrored: boolean
 }
 
 /** Fenêtre d'animation autour du saut, en secondes. */
@@ -125,6 +127,7 @@ const NEUTRAL: BodyPose = {
   arms: { ...NO_ARMS, ride: 1 },
   grab: 'none',
   grabAmount: 0,
+  mirrored: false,
 }
 
 type PoseChanges = Partial<Omit<BodyPose, 'arms'>> & { arms?: Partial<ArmWeights> }
@@ -169,6 +172,8 @@ function mixPose(from: BodyPose, to: BodyPose, ratio: number): BodyPose {
     // La main vise le même point du ski pendant toute l'approche et tout le relâchement du grab.
     grab: to.grabAmount > 0 ? to.grab : from.grab,
     grabAmount: number('grabAmount'),
+    // Le côté suit le grab : la même main le prend et le lâche.
+    mirrored: to.grabAmount > 0 || to.skiCross !== 0 ? to.mirrored : from.mirrored,
   }
 }
 
@@ -200,13 +205,17 @@ export function switchLookAmount(
   return Math.max(leaving, arriving)
 }
 
-/** Ajoute à une posture le regard par-dessus l'épaule de la glisse en switch. */
-export function withSwitchLook(body: BodyPose, amount: number): BodyPose {
+/**
+ * Ajoute à une posture le regard par-dessus l'épaule de la glisse en switch : l'épaule gauche, ou
+ * la droite quand le skieur tourne à droite, pour que la tête ne change pas de côté après la figure.
+ */
+export function withSwitchLook(body: BodyPose, amount: number, rightward = false): BodyPose {
   if (amount <= 0) return body
+  const side = rightward ? -1 : 1
   return {
     ...body,
-    twist: body.twist + SWITCH_LOOK.twist * amount,
-    headYaw: body.headYaw + SWITCH_LOOK.headYaw * amount,
+    twist: body.twist + side * SWITCH_LOOK.twist * amount,
+    headYaw: body.headYaw + side * SWITCH_LOOK.headYaw * amount,
     lean: body.lean + SWITCH_LOOK.lean * amount,
   }
 }
@@ -413,6 +422,14 @@ interface Keyframe {
 }
 
 /**
+ * Même posture, faite de l'autre côté. Toutes les postures sont écrites pour une vrille à gauche et
+ * la main droite : à droite, épaules, bras et tête tournent dans l'autre sens et le grab change de main.
+ */
+export function mirrorPose(body: BodyPose): BodyPose {
+  return { ...body, twist: -body.twist, armSweep: -body.armSweep, headYaw: -body.headYaw, mirrored: !body.mirrored }
+}
+
+/**
  * Posture à un instant du saut. `timeFromTakeoff` est négatif pendant l'élan, nul à la lèvre.
  * Hors de la fenêtre du saut, le skieur est en posture de glisse.
  */
@@ -429,6 +446,7 @@ export function bodyPoser(plan: PoseTiming, rideFlex: number): (timeFromTakeoff:
   const { trick, airTime } = plan
   const ride = ridePose(rideFlex)
   if (airTime <= 0) return () => ride
+  const sided = (body: BodyPose): BodyPose => (trick.mirrored ? mirrorPose(body) : body)
 
   const { shaping, opening } = flightPhases(airTime)
   const held = heldPose(trick, plan.compactness)
@@ -448,10 +466,10 @@ export function bodyPoser(plan: PoseTiming, rideFlex: number): (timeFromTakeoff:
       : [{ time: openFrom, pose: held }]
   const frames: readonly Keyframe[] = [
     { time: -WIND_UP_SECONDS, pose: ride },
-    { time: -LOADED_SECONDS, pose: loadedPose(Math.abs(trick.spins)) },
-    { time: 0, pose: popPose(trick) },
-    { time: heldFrom, pose: held },
-    ...release,
+    { time: -LOADED_SECONDS, pose: sided(loadedPose(Math.abs(trick.spins))) },
+    { time: 0, pose: sided(popPose(trick)) },
+    { time: heldFrom, pose: sided(held) },
+    ...release.map((frame) => ({ ...frame, pose: sided(frame.pose) })),
     { time: airTime, pose: landing },
     { time: airTime + ABSORB_SECONDS, pose: ABSORB },
     { time: airTime + RECOVER_SECONDS, pose: ride },

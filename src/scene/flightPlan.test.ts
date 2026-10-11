@@ -268,3 +268,31 @@ describe('y a-t-il le temps de rentrer la figure', () => {
     expect(plan('cork720')).toBe(plan('cork720'))
   })
 })
+
+describe('rotation à droite', () => {
+  test('les skis pivotent dans l’autre sens à la lèvre, à la même vitesse', () => {
+    const left = plan('spin360')
+    const right = plan('spin360@d')
+
+    expect(right.takeoffPivotRate).toBeLessThan(-1)
+    expect(right.takeoffPivotRate).toBeCloseTo(-left.takeoffPivotRate, 3)
+    expect(right.set.twist).toBeCloseTo(-left.set.twist, 3)
+  })
+
+  test('les deux sens d’une même figure ont chacun leur plan', () => {
+    expect(plan('spin360@d')).not.toBe(plan('spin360'))
+  })
+
+  test.each(['spin180@d', 'spin360@d', 'spin540mute@d', 'spin720@d', 'cork720@d', 'rodeo540@d', 'misty540@d'])(
+    '%s : la figure se boucle comme à gauche',
+    (id) => {
+      const right = plan(id, { airTime: 3.5 })
+      const left = plan(id.replace('@d', ''), { airTime: 3.5 })
+
+      expect(right.completed).toBe(true)
+      expect(right.angularMomentum).toBeCloseTo(left.angularMomentum, 3)
+      expect(right.conditions.switchAfter).toBe(left.conditions.switchAfter)
+    },
+    60_000,
+  )
+})

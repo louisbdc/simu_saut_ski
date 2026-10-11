@@ -34,6 +34,11 @@ export interface Trick {
    * Absent, le skieur s'ouvre et se cambre dès que le vol lui en laisse le temps.
    */
   readonly tucked?: true
+  /**
+   * Figure faite de l'autre côté : la vrille part à droite, et c'est la main gauche qui attrape le ski.
+   * Absent, la vrille part à gauche et la main droite attrape.
+   */
+  readonly mirrored?: true
 }
 
 /**
@@ -116,9 +121,16 @@ export interface CustomTrickSettings {
   readonly flips: number
   readonly spinDegrees: number
   readonly grab: GrabKind
+  /** La vrille part à droite et la main gauche attrape. */
+  readonly right?: boolean
 }
 
 export const CUSTOM_TRICK_PREFIX = 'custom'
+/** Dernier champ d'une figure perso faite à droite. */
+const CUSTOM_RIGHT = 'd'
+/** Suffixe d'une figure du catalogue faite à droite : le catalogue n'est pas doublé. */
+const RIGHT_SUFFIX = '@d'
+const RIGHT_LABEL = ' à droite'
 export const CUSTOM_TRICK_LIMITS = { flips: 20, spinDegrees: 36000 } as const
 export const GRABS: readonly GrabKind[] = ['none', 'safety', 'mute', 'japan']
 /** On se pose de face ou en switch : la vrille se compte par demi-tours. */
@@ -129,12 +141,13 @@ const clamp = (value: number, limit: number): number => Math.min(limit, Math.max
 
 /** Identifiant d'une figure personnalisée : il porte ses réglages, donc se range comme une figure du catalogue. */
 export function customTrickId(settings: CustomTrickSettings): string {
-  return [CUSTOM_TRICK_PREFIX, settings.flips, settings.spinDegrees, settings.grab].join(':')
+  const fields = [CUSTOM_TRICK_PREFIX, settings.flips, settings.spinDegrees, settings.grab]
+  return (settings.right ? [...fields, CUSTOM_RIGHT] : fields).join(':')
 }
 
 /** Réglages portés par un identifiant de figure personnalisée, bornés ; `null` si ce n'en est pas un. */
 export function parseCustomTrick(id: string): CustomTrickSettings | null {
-  const [prefix, flips, spinDegrees, grab] = id.split(':')
+  const [prefix, flips, spinDegrees, grab, side] = id.split(':')
   if (prefix !== CUSTOM_TRICK_PREFIX) return null
   const flipCount = Number(flips)
   const degrees = Number(spinDegrees)
@@ -144,6 +157,7 @@ export function parseCustomTrick(id: string): CustomTrickSettings | null {
     spinDegrees:
       Math.round(clamp(Math.abs(degrees), CUSTOM_TRICK_LIMITS.spinDegrees) / HALF_TURN_DEGREES) * HALF_TURN_DEGREES,
     grab: GRABS.find((kind) => kind === grab) ?? 'none',
+    ...(side === CUSTOM_RIGHT ? { right: true } : {}),
   }
 }
 
@@ -175,24 +189,55 @@ function customTrick(id: string): Trick | null {
   const settings = parseCustomTrick(id)
   if (!settings) return null
   const { flips, spinDegrees, grab } = settings
-  const spins = spinDegrees / 360
-  const family = customFamily(flips, spins)
+  const turns = spinDegrees / 360
+  const right = settings.right === true && (turns !== 0 || grab !== 'none')
+  const spins = right ? -turns : turns
+  const family = customFamily(flips, turns)
   const tucked = flips !== 0 || grab !== 'none'
   return {
-    id: customTrickId(settings),
-    label: customLabel(family, flips, spinDegrees, grab),
+    id: customTrickId({ ...settings, right }),
+    label: `${customLabel(family, flips, spinDegrees, grab)}${right ? RIGHT_LABEL : ''}`,
     family,
     flips,
     spins,
     tuckMax: tucked ? 1 : family === 'straight' ? 0.3 : 0.65,
     grab,
+    ...(right ? { mirrored: true as const } : {}),
   }
 }
 
 /** Figure correspondant à un identifiant ; un identifiant inconnu donne le saut droit. */
 export function getTrick(id: string | undefined): Trick {
   const key = id ?? DEFAULT_TRICK_ID
-  return BY_ID.get(key) ?? customTrick(key) ?? TRICKS[0]
+  return BY_ID.get(key) ?? mirroredTrick(key) ?? customTrick(key) ?? TRICKS[0]
+}
+
+/** Une figure a un sens dès qu'elle vrille ou qu'une main attrape un ski. */
+export function hasDirection(trick: Trick): boolean {
+  return trick.spins !== 0 || trick.grab !== 'none'
+}
+
+/** Figure du catalogue faite à droite ; `null` si l'identifiant n'en désigne pas une, ou si elle n'a pas de sens. */
+function mirroredTrick(id: string): Trick | null {
+  if (!id.endsWith(RIGHT_SUFFIX)) return null
+  const base = BY_ID.get(id.slice(0, -RIGHT_SUFFIX.length))
+  if (!base) return null
+  if (!hasDirection(base)) return base
+  // Sans vrille, `spins` reste à zéro tout court : pas de zéro négatif à comparer plus loin.
+  return { ...base, id, label: `${base.label}${RIGHT_LABEL}`, spins: base.spins === 0 ? 0 : -base.spins, mirrored: true }
+}
+
+/** La figure désignée par cet identifiant est-elle faite à droite ? */
+export function isRightward(id: string): boolean {
+  return getTrick(id).mirrored === true
+}
+
+/** Identifiant de la même figure, faite à droite ou à gauche. */
+export function withDirection(id: string, right: boolean): string {
+  const custom = parseCustomTrick(id)
+  if (custom) return customTrickId({ ...custom, right })
+  const base = id.endsWith(RIGHT_SUFFIX) ? id.slice(0, -RIGHT_SUFFIX.length) : id
+  return right ? `${base}${RIGHT_SUFFIX}` : base
 }
 
 /** Nombre de tours annoncé par le nom de la figure : 360° par salto et par vrille. */
