@@ -331,7 +331,8 @@ function balancedLean(shape: BodyPose): number {
 
 /** Figure tenue au milieu du vol. */
 function heldPose(trick: Trick, compactness: number): BodyPose {
-  if (trick.family === 'backflip') return backflipPose(compactness, trick.tuckMax)
+  // Le backflip groupé reste genoux-poitrine même quand le vol laisserait le temps de s'ouvrir.
+  if (trick.family === 'backflip') return backflipPose(trick.tucked ? 1 : compactness, trick.tuckMax)
   const tuck = trick.tuckMax * compactness
   const grab = grabChanges(trick.grab)
 
@@ -339,8 +340,9 @@ function heldPose(trick: Trick, compactness: number): BodyPose {
     case 'straight':
       return pose({ tuck, arms: { ride: 0.5, wide: 0.5 }, ...grab })
     case 'spin': {
-      // La tête mène la rotation ; sans grab, un bras part devant et l'autre derrière.
-      const shape = pose({ tuck, twist: 0.15, headYaw: 0.6, arms: { in: 0.45, back: 0.55 }, ...grab })
+      // La tête mène la rotation ; sans grab, les bras restent contenus, coudes pliés, mains devant le
+      // ventre. Écartés à hauteur d'épaules, ils freinent la vrille et dessinent un « T ».
+      const shape = pose({ tuck, twist: 0.15, headYaw: 0.6, arms: { in: 0.7, ride: 0.3 }, ...grab })
       // Le japan impose son buste ; sinon le skieur se place autour de son axe de vrille.
       return trick.grab === 'japan' ? shape : { ...shape, lean: balancedLean(shape) }
     }
@@ -433,11 +435,12 @@ export function bodyPoser(plan: PoseTiming, rideFlex: number): (timeFromTakeoff:
   const heldFrom = shaping
   const openFrom = airTime - opening
   const landing = openPose(trick.family)
-  // Un backflip se rouvre tôt : dès que la réception est en vue, les jambes repassent sous le corps.
+  // Un salto se rouvre tôt : dès que la réception est en vue, les jambes repassent sous le corps.
   // Sur un vol trop court pour cela, il reste groupé jusqu'à l'ouverture finale.
   const spotFrom = openFrom - opening
+  const spots = trick.family === 'backflip' || trick.family === 'frontflip'
   const release: readonly Keyframe[] =
-    trick.family === 'backflip' && spotFrom > heldFrom
+    spots && spotFrom > heldFrom
       ? [
           { time: spotFrom, pose: held },
           { time: openFrom, pose: mixPose(held, landing, SPOTTING_OPENNESS) },

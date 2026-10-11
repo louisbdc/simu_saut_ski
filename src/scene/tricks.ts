@@ -29,6 +29,11 @@ export interface Trick {
   readonly tuckMax: number
   /** Grab tenu pendant le groupé. */
   readonly grab: GrabKind
+  /**
+   * Salto tenu groupé genoux-poitrine quel que soit le temps de vol : c'est la forme qu'on apprend.
+   * Absent, le skieur s'ouvre et se cambre dès que le vol lui en laisse le temps.
+   */
+  readonly tucked?: true
 }
 
 /**
@@ -75,6 +80,7 @@ const ROWS: readonly Row[] = [
   ['spin1080', '1080 safety', 'spin', 0, 3, 1, 'safety'],
   ['spin1440', '1440 mute', 'spin', 0, 4, 1, 'mute'],
   ['backflip', 'Backflip', 'backflip', 1, 0, 1, 'none'],
+  ['backflipTuck', 'Backflip groupé', 'backflip', 1, 0, 1, 'none'],
   ['doubleBackflip', 'Double backflip', 'backflip', 2, 0, 1, 'none'],
   ['frontflip', 'Frontflip', 'frontflip', -1, 0, 1, 'none'],
   // Désaxés : le nom additionne 360° par salto et par vrille.
@@ -88,6 +94,9 @@ const ROWS: readonly Row[] = [
   ['misty720', 'Misty 720 safety', 'misty', -1, 1, 1, 'safety'],
 ]
 
+/** Figures tenues groupées même quand le vol laisserait le temps de s'ouvrir. */
+const ALWAYS_TUCKED: ReadonlySet<string> = new Set(['backflipTuck'])
+
 export const TRICKS: readonly Trick[] = ROWS.map(([id, label, family, flips, spins, tuckMax, grab]) => ({
   id,
   label,
@@ -96,6 +105,7 @@ export const TRICKS: readonly Trick[] = ROWS.map(([id, label, family, flips, spi
   spins,
   tuckMax,
   grab,
+  ...(ALWAYS_TUCKED.has(id) ? { tucked: true as const } : {}),
 }))
 
 const BY_ID: ReadonlyMap<string, Trick> = new Map(TRICKS.map((trick) => [trick.id, trick]))

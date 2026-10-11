@@ -59,3 +59,16 @@ export function sampleAt(samples: readonly Sample[], time: number): Sample {
     airProgress: a.kind === 'air' && b.kind === 'air' ? mix(a.airProgress, b.airProgress, ratio) : a.airProgress,
   }
 }
+
+/** Tranche du parcours, en secondes depuis le départ. */
+export interface TimeWindow {
+  readonly start: number
+  readonly end: number
+}
+
+/** Garde une lecture en cours dans une tranche du parcours : arrivée au bout, elle reprend au début. */
+export function loopWithin(state: PlaybackState, window: TimeWindow): PlaybackState {
+  if (!state.playing) return state
+  if (state.time >= window.start && state.time < window.end) return state
+  return { ...state, time: window.start }
+}

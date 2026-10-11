@@ -1,4 +1,5 @@
 import * as THREE from 'three'
+import { startApp, type SceneFrame } from './app/shell'
 import { DEFAULT_SCENARIO_ID, buildScenario } from './physics/presets'
 import { simulate } from './physics/simulate'
 import { solveInrunLength, tuneLine, withKicker, type InrunSolution } from './physics/solver'
@@ -9,7 +10,7 @@ import { buildCrashScene, type CrashScene } from './scene/crash'
 import { PARTS, type RagdollPoints, type RagdollStart } from './scene/ragdoll'
 import { barDownAt, chairTravelAt, epilogueAt, gateOpenAt } from './scene/epilogue'
 import { buildLiftRide, liftLabel, liftSample, seatedPosture, type LiftRide } from './scene/liftRide'
-import { advance, sampleAt, type LoopTiming, type PlaybackState } from './scene/playback'
+import { advance, loopWithin, sampleAt, type LoopTiming, type PlaybackState, type TimeWindow } from './scene/playback'
 import { revealUpTo } from './scene/reveal'
 import {
   createStage,
@@ -57,7 +58,6 @@ const playButton = query<HTMLButtonElement>('#play')
 const rateSelect = query<HTMLSelectElement>('#rate')
 const timeline = query<HTMLInputElement>('#timeline')
 const toggleResults = query<HTMLButtonElement>('#toggle-results')
-const cameraButtons = [...document.querySelectorAll<HTMLButtonElement>('[data-camera]')]
 
 const stage = createStage(query<HTMLCanvasElement>('#scene'))
 const rig = createCameraRig(stage.camera, stage.controls)
@@ -99,6 +99,15 @@ let wasAirborne = false
 let pendingConfig: LineConfig | null = null
 /** Hauteur du bandeau bas, relue seulement quand il change de taille. */
 let dockHeight = dock.offsetHeight
+/** Hauteur masquée en bas par le bandeau d'un autre écran que la piste libre (les tutos). */
+let screenInset = 0
+/** Piste libre mise de côté pendant qu'un autre écran montre sa propre piste. */
+let sandboxConfig: LineConfig | null = null
+/** Tranche du parcours sur laquelle la lecture tourne en boucle ; `null` : la boucle normale. */
+let loopWindow: TimeWindow | null = null
+const frameListeners: ((time: number) => void)[] = []
+/** Écran qui reprend la main sur la caméra ou pose ses repères pendant la descente (les tutos). */
+let frameHook: ((frame: SceneFrame) => void) | null = null
 const idle = createIdleGate(WAKE_MS)
 const wake = (): void => idle.wake(performance.now())
 let solverTimer: number | undefined
@@ -271,7 +280,7 @@ function applyConfig(next: LineConfig, settled = true): void {
     // Une figure pas bouclée fait tomber à la réception : la suite du parcours est une glissade.
     const failure = failedKickerOf(clean, nextPlans)
     const simulated = failure === undefined ? clean : simulate(next, undefined, { failedKicker: failure })
-    const nextRide = buildLiftRide(simulated)
+    const nextRide = buildLiftRide(simulated, nextStances[nextStances.length - 1] === true)
     const nextGroups = buildGroups(simulated, nextRide)
     appliedFailure = failure
     config = next
@@ -335,7 +344,9 @@ const panel = createPanel(
 
 function setCamera(mode: CameraMode): void {
   rig.setMode(mode)
-  cameraButtons.forEach((button) => button.setAttribute('aria-pressed', String(button.dataset.camera === mode)))
+  document
+    .querySelectorAll<HTMLButtonElement>('[data-camera]')
+    .forEach((button) => button.setAttribute('aria-pressed', String(button.dataset.camera === mode)))
 }
 
 function showOverview(): void {
@@ -362,9 +373,11 @@ timeline.addEventListener('input', () => {
   const time = (Number(timeline.value) / TIMELINE_STEPS) * result.duration
   playback = { ...playback, time, playing: false }
 })
-cameraButtons.forEach((button) =>
-  button.addEventListener('click', () => setCamera(button.dataset.camera as CameraMode)),
-)
+// Les boutons de caméra existent sur plusieurs écrans : un seul écouteur pour tous.
+document.addEventListener('click', (event) => {
+  const button = event.target instanceof Element ? event.target.closest<HTMLButtonElement>('[data-camera]') : null
+  if (button) setCamera(button.dataset.camera as CameraMode)
+})
 query<HTMLButtonElement>('#overview').addEventListener('click', showOverview)
 toggleResults.addEventListener('click', () => {
   const collapsed = dock.classList.toggle('collapsed')
@@ -409,7 +422,8 @@ function frame(now: number): void {
     return
   }
   playback = advance(playback, elapsed, loopTiming())
-  setBottomInset(stage, dockHeight + DOCK_MARGIN)
+  if (loopWindow) playback = loopWithin(playback, loopWindow)
+  setBottomInset(stage, Math.max(dockHeight, screenInset) + DOCK_MARGIN)
   spray.update(playback.playing ? elapsed : 0)
 
   const sinceHandover = liftRide ? playback.time - liftRide.plan.handover : -1
@@ -427,6 +441,7 @@ function frame(now: number): void {
     const shown = Math.min(playback.time, result.duration) / (result.duration || 1)
     timeline.value = String(Math.round(shown * TIMELINE_STEPS))
   }
+  frameListeners.forEach((listener) => listener(playback.time))
   requestAnimationFrame(frame)
 }
 
@@ -438,7 +453,7 @@ function frameLift(ride: LiftRide, sinceHandover: number, elapsed: number): void
   const sample = liftSample(state, playback.time, result.reports.length - 1)
   const focus = new THREE.Vector3(state.x, state.y + 1, state.z)
   skier.pose(sample, null, false, null, elapsed, {
-    posture: seatedPosture(state.seated, state.crouch),
+    posture: seatedPosture(state.seated, state.crouch, state.backward),
     yaw: state.yaw,
     lean: state.lean,
     z: state.z,
@@ -459,7 +474,7 @@ function frameLift(ride: LiftRide, sinceHandover: number, elapsed: number): void
   trackLight(stage, focus)
   stage.renderer.render(stage.scene, stage.camera)
 
-  updateLive(sample, null, false, liftLabel(state))
+  updateLive(sample, null, state.backward > 0.5, liftLabel(state))
   chart.draw(result.samples[result.samples.length - 1].x)
 }
 
@@ -484,6 +499,14 @@ function frameDescent(elapsed: number): void {
   const body = fall && crashScene ? fall.frameAt(playback.time - crashScene.time).pelvis : null
   const viewed = body ? { ...sample, x: body.x, y: body.y, vx: 0, vy: 0 } : sample
   rig.update(viewed, result.terrain, elapsed)
+  frameHook?.({
+    time: playback.time,
+    elapsed,
+    points: fallen ? null : skier.worldPoints(),
+    camera: stage.camera,
+    controls: stage.controls,
+    terrain: result.terrain,
+  })
   stage.controls.update()
   trackLight(stage, new THREE.Vector3(viewed.x, viewed.y, 0))
   stage.renderer.render(stage.scene, stage.camera)
@@ -492,7 +515,66 @@ function frameDescent(elapsed: number): void {
   chart.draw(sample.x)
 }
 
+/** Montre la piste d'un autre écran (une leçon), en mettant la piste libre de côté. */
+function showLine(line: LineConfig): SimulationResult {
+  sandboxConfig ??= config
+  applyConfig(line)
+  if (config !== line) throw new Error('la piste n’a pas pu être simulée')
+  restart()
+  return result
+}
+
+/** Rend la piste libre telle qu'on l'avait laissée, avec sa lecture normale. */
+function restoreSandbox(): void {
+  loopWindow = null
+  if (!sandboxConfig) return
+  const saved = sandboxConfig
+  sandboxConfig = null
+  applyConfig(saved)
+  playback = { time: 0, playing: true, rate: Number(rateSelect.value) }
+}
+
+/** Articulations du skieur à un instant du parcours ; la prochaine image le reposera à l'instant affiché. */
+function probePoints(time: number): RagdollPoints | null {
+  const sample = sampleAt(result.samples, time)
+  const jump = jumpAt(sample.kicker, time)
+  skier.pose(sample, jump, ridesSwitch(sample.kicker, jump), null, 0)
+  return skier.worldPoints()
+}
+
 resizeStage(stage)
 applyConfig(config)
+startApp({
+  showLine,
+  restoreSandbox,
+  getPlayback: () => playback,
+  setPlayback: (changes) => {
+    playback = { ...playback, ...changes }
+    wake()
+  },
+  setLoop: (window) => {
+    loopWindow = window
+  },
+  setCamera,
+  setBottomInset: (pixels) => {
+    screenInset = pixels
+    wake()
+  },
+  addToScene: (object) => {
+    stage.scene.add(object)
+  },
+  setFrameHook: (hook) => {
+    frameHook = hook
+  },
+  orientationAt: (time) => {
+    const report = result.reports[0]
+    const plan = plans[0]
+    return report?.reached && plan ? plan.orientationAt(time - report.takeoffTime) : null
+  },
+  probePoints,
+  onFrame: (listener) => {
+    frameListeners.push(listener)
+  },
+})
 idle.wake(performance.now(), STARTUP_WAKE_MS)
 requestAnimationFrame(frame)

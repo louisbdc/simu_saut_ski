@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest'
 import type { Sample } from '../physics/types'
-import { advance, sampleAt } from './playback'
+import { advance, loopWithin, sampleAt } from './playback'
 
 const sample = (t: number, x: number, speed: number): Sample => ({
   t,
@@ -66,5 +66,29 @@ describe('lecture du parcours', () => {
     const paused = { time: 4, playing: false, rate: 1 }
 
     expect(advance(paused, 1, { descent: 10, total: 30 })).toBe(paused)
+  })
+})
+
+describe('lecture en boucle sur une tranche', () => {
+  const window = { start: 2, end: 3 }
+
+  test('laisse la lecture avancer à l’intérieur de la tranche', () => {
+    const state = { time: 2.4, playing: true, rate: 1 }
+
+    expect(loopWithin(state, window)).toBe(state)
+  })
+
+  test('revient au début une fois la fin dépassée', () => {
+    expect(loopWithin({ time: 3.02, playing: true, rate: 1 }, window).time).toBe(2)
+  })
+
+  test('ramène dans la tranche une lecture partie d’ailleurs', () => {
+    expect(loopWithin({ time: 0.5, playing: true, rate: 1 }, window).time).toBe(2)
+  })
+
+  test('en pause, on peut s’arrêter où l’on veut', () => {
+    const state = { time: 9, playing: false, rate: 1 }
+
+    expect(loopWithin(state, window)).toBe(state)
   })
 })

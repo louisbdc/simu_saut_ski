@@ -91,9 +91,10 @@ describe('postures au fil du saut', () => {
 
     expect(held.headYaw).toBeGreaterThan(0.5)
     expect(held.tuck).toBeGreaterThan(0.3)
-    // Sans grab, un bras reste près du corps et l'autre part en arrière.
-    expect(held.arms.in).toBeGreaterThan(0.3)
-    expect(held.arms.back).toBeGreaterThan(0.3)
+    // Sans grab, les deux bras restent contenus devant le corps : aucun ne part sur le côté.
+    expect(held.arms.in).toBeGreaterThan(0.5)
+    expect(held.arms.back).toBe(0)
+    expect(held.arms.wide).toBe(0)
     expect(held.grab).toBe('none')
   })
 
