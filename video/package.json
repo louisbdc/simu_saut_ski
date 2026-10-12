@@ -1,0 +1,26 @@
+{
+  "name": "simu-saut-ski-video",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "capture": "node capture/run.mjs",
+    "studio": "remotion studio",
+    "render": "remotion render Paysage out/presentation-paysage.mp4 && remotion render Vertical out/presentation-verticale.mp4"
+  },
+  "dependencies": {
+    "@remotion/cli": "4.0.534",
+    "@remotion/google-fonts": "4.0.534",
+    "@remotion/media": "4.0.534",
+    "@remotion/transitions": "4.0.534",
+    "react": "19.3.0",
+    "react-dom": "19.3.0",
+    "remotion": "4.0.534"
+  },
+  "devDependencies": {
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "playwright": "^1.64.0",
+    "typescript": "^7.0.2"
+  }
+}
