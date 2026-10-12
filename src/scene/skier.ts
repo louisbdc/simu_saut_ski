@@ -64,6 +64,8 @@ export interface SeatPose {
   readonly yaw: number
   /** Inclinaison latérale du corps, en radians : il se couche vers l'intérieur d'un dérapage. */
   readonly lean: number
+  /** Bascule du corps vers l'arrière de ses skis, en radians : il s'y appuie pour freiner dans l'axe. */
+  readonly pitch: number
   readonly z: number
 }
 
@@ -141,9 +143,9 @@ function jointsFromPoints(points: RagdollPoints): Joints {
     handTarget: points[`hand${suffix}`],
     skiYaw: 0,
     skiLift: 0,
+    skiPitch: 0,
   })
   const toHead = points.head.clone().sub(points.neck)
-    skiPitch: 0,
   return {
     pelvis: points.pelvis,
     neck: points.neck,
@@ -347,7 +349,10 @@ export function createSkier(): Skier {
         // qui lui manque en pivotant autour de son centre de gravité.
         slope.setFromAxisAngle(LATERAL, sample.tilt)
         stance.setFromAxisAngle(UP, seat?.yaw ?? (facesBackward(jump, ridingSwitch) ? Math.PI : 0))
-        if (seat) stance.multiply(roll.setFromAxisAngle(FORWARD, seat.lean))
+        if (seat) {
+          stance.multiply(roll.setFromAxisAngle(FORWARD, seat.lean))
+          stance.multiply(roll.setFromAxisAngle(LATERAL, seat.pitch))
+        }
         const sinceLanding = jump ? jump.timeFromTakeoff - jump.plan.airTime : -1
         leftover.identity()
         if (jump && sinceLanding >= 0) {
@@ -372,13 +377,13 @@ export function createSkier(): Skier {
         // Quand le corps bascule dans l'axe des skis, ce sont les chevilles qui plient : les skis restent à plat.
         feet[index].rotation.set(0, side.skiYaw, -(seat?.pitch ?? 0))
         feet[index].position.set(0, side.skiLift, side.ankle.z)
+        // Tail ou nose grab : le ski bascule autour de la cheville, talon ou spatule vers la main.
+        feet[index].rotateZ(side.skiPitch)
+        feet[index].position.x += ANKLE_HEIGHT * Math.sin(side.skiPitch)
+        feet[index].position.y += ANKLE_HEIGHT * (1 - Math.cos(side.skiPitch))
       })
       lastJoints = joints
       placePoles(dress(joints))
     },
   }
-        // Tail ou nose grab : le ski bascule autour de la cheville, talon ou spatule vers la main.
-        feet[index].rotateZ(side.skiPitch)
-        feet[index].position.x += ANKLE_HEIGHT * Math.sin(side.skiPitch)
-        feet[index].position.y += ANKLE_HEIGHT * (1 - Math.cos(side.skiPitch))
 }

@@ -47,6 +47,20 @@ const SLIDE_FROM = -0.04
 const SLIDE_FULL = 0.1
 const SLIDE_RELEASE = 0.2
 const SLIDE_ANGLE = 1.4
+/**
+ * Arrivé en switch, il ne tourne pas sur lui-même : il reste face à la montée et laisse sa trajectoire
+ * s'incurver sous lui, skis à peine ouverts vers le télésiège. C'est le virage qui le met en travers,
+ * puis de face. Entre ces deux fractions de la courbe, il rejoint le dérapage d'une arrivée de face.
+ */
+const SWITCH_OPENING = 0.35
+const SWITCH_TURN_FROM = 0.25
+const SWITCH_TURN_TO = 0.8
+/** Sans élan, il n'y a pas de dérapage : il se retourne sur cette première part du chemin. */
+const SWITCH_PIVOT_SHARE = 0.4
+/** Sur ces premiers mètres, son regard passe d'une épaule à l'autre, du côté où il va tourner. */
+const LOOK_SWAP_DISTANCE = 9
+/** Rotation maximale de la tête vers sa glisse, et part que les épaules en prennent. */
+const HEAD_TURN_MAX = 1.3
 /** Le demi-tour s'achève cette distance avant l'entrée du couloir, et les skis sont remis dans l'axe sur les derniers mètres de la courbe. */
 const LANE_RUN_UP = 1.5
 const SLIDE_RECOVERY = 4
@@ -107,6 +121,8 @@ export interface EpiloguePlan {
   readonly entrySpeed: number
   /** Inclinaison du skieur au départ de la descente, qu'il retrouve en fin de débarquement. */
   readonly startTilt: number
+  /** La descente le laisse-t-elle en switch ? Il freine alors en arrière et se retourne dans son dérapage. */
+  readonly arrivesSwitch: boolean
 }
 
 export interface EpilogueState {
@@ -124,6 +140,12 @@ export interface EpilogueState {
   readonly slide: number
   /** Inclinaison latérale du corps en radians, vers l'intérieur du virage pendant le dérapage. */
   readonly lean: number
+  /** Bascule du corps vers l'arrière de ses skis, en radians ; négative, il s'appuie vers ses spatules. */
+  readonly pitch: number
+  /** Part du regard par-dessus l'épaule qu'il avait en descente, quand il arrive en switch : de 1 à 0. */
+  readonly backward: number
+  /** Tête tournée vers sa glisse pendant qu'il freine dos à elle, en radians. */
+  readonly headYaw: number
   /** Flexion ajoutée pour encaisser le freinage, de 0 à 1. */
   readonly crouch: number
   /** Force de la gerbe de neige soulevée par les carres, de 0 à 1. */
@@ -213,6 +235,7 @@ export function planEpilogue(
   line: LiftLine,
   samples: readonly Sample[],
   seat: SeatOffset,
+  arrivesSwitch = false,
 ): EpiloguePlan {
   const first = samples[0]
   const lastX = shape.terrain.points[shape.terrain.points.length - 1].x
@@ -277,6 +300,7 @@ export function planEpilogue(
     unloadSeconds,
     entrySpeed: gliding ? entry.speed : 0,
     startTilt: first.tilt,
+    arrivesSwitch,
   }
 }
 
@@ -323,11 +347,18 @@ interface Placement {
   readonly heading: number
   readonly slide: number
   readonly lean: number
+  readonly pitch: number
+  readonly backward: number
+  readonly headYaw: number
   readonly crouch: number
   readonly spray: number
 }
 
-const NO_SLIDE = { slide: 0, lean: 0, crouch: 0, spray: 0 }
+const NO_SLIDE = { slide: 0, lean: 0, pitch: 0, backward: 0, headYaw: 0, crouch: 0, spray: 0 }
+
+/** Avancement dans la courbe du demi-tour : négatif en ligne droite, 1 à l'entrée du couloir. */
+const curveProgressAt = (plan: EpiloguePlan, distance: number): number =>
+  (distance - plan.leadLength) / (plan.turnEnd - plan.leadLength)
 
 /**
  * Part des skis en travers à cet instant de la sortie. Le dérapage commence à la fin de la ligne
@@ -335,11 +366,50 @@ const NO_SLIDE = { slide: 0, lean: 0, crouch: 0, spray: 0 }
  */
 function slideAmount(plan: EpiloguePlan, distance: number, momentum: number): number {
   if (plan.entrySpeed === 0) return 0
-  const curveProgress = (distance - plan.leadLength) / (plan.turnEnd - plan.leadLength)
+  const curveProgress = curveProgressAt(plan, distance)
   const recovered = smoothstep((distance - (plan.turnEnd - SLIDE_RECOVERY)) / SLIDE_RECOVERY)
   return (
     smoothstep((curveProgress - SLIDE_FROM) / (SLIDE_FULL - SLIDE_FROM)) * smoothstep(momentum / SLIDE_RELEASE) * (1 - recovered)
   )
+}
+
+/** Part du retournement déjà faite après une réception en switch : il se joue pendant le freinage. */
+function turnedAmount(plan: EpiloguePlan, distance: number): number {
+  if (plan.entrySpeed === 0) return smoothstep(distance / (plan.approach.length * SWITCH_PIVOT_SHARE))
+  return smoothstep((curveProgressAt(plan, distance) - SWITCH_TURN_FROM) / (SWITCH_TURN_TO - SWITCH_TURN_FROM))
+}
+
+interface SkiStance {
+  /** Angle des skis par rapport à la glisse : 0 = dans l'axe, π = en arrière. */
+  readonly angle: number
+  readonly slide: number
+  readonly backward: number
+  readonly headYaw: number
+}
+
+/**
+ * Comment il tient ses skis à cet endroit de la sortie. `grip` est la prise de carres du freinage,
+ * de 0 à 1. De face, elle jette les skis en travers du côté du télésiège. En switch, il garde le cap
+ * de son arrivée : la courbe de sa trajectoire fait tourner sa glisse sous lui, d'abord en arrière,
+ * puis en travers, et il finit dans le dérapage d'une arrivée de face.
+ */
+function skiStance(plan: EpiloguePlan, distance: number, heading: number, grip: number): SkiStance {
+  const facingAhead = SLIDE_ANGLE * grip
+  if (!plan.arrivesSwitch) return { angle: facingAhead, slide: grip, backward: 0, headYaw: 0 }
+  const turned = turnedAmount(plan, distance)
+  // Cap gardé face à la montée, ramené entre -π/2 et 3π/2 pour que le cap de fin de courbe (±π) donne 0.
+  const uphill = Math.PI - heading
+  const facingUphill = uphill - 2 * Math.PI * Math.floor((uphill + Math.PI / 2) / (2 * Math.PI))
+  const angle = mix(facingUphill - SWITCH_OPENING * grip, facingAhead, turned)
+  // Dos à la glisse, les skis ne freinent qu'à la mesure de leur mise en travers.
+  const across = Math.min(1, Math.abs(Math.sin(angle)) / Math.sin(SLIDE_ANGLE))
+  const swapped = smoothstep(distance / LOOK_SWAP_DISTANCE)
+  return {
+    angle,
+    slide: grip * mix(across, 1, turned),
+    backward: 1 - swapped,
+    headYaw: -clamp(angle, 0, HEAD_TURN_MAX) * swapped * (1 - turned),
+  }
 }
 
 /** Du portillon au quai : il attend l'ouverture, pousse jusqu'à la ligne d'embarquement et s'y tient prêt. */
@@ -371,16 +441,21 @@ function standing(plan: EpiloguePlan, t: number): Placement {
     if (t >= plan.approachEnd) return atPlatform(plan, t)
     const { distance, momentum } = approachProgress(plan, t)
     const spot = alongPath(plan.approach, distance)
-    const slide = slideAmount(plan, distance, momentum)
+    const { angle, slide, backward, headYaw } = skiStance(plan, distance, spot.yaw, slideAmount(plan, distance, momentum))
+    // Il se couche à l'opposé de sa glisse, sur ses carres amont : de côté quand ses skis sont en
+    // travers, vers ses spatules tant qu'il glisse en arrière.
+    const against = SLIDE_LEAN * slide * Math.sqrt(momentum)
     return {
       ...spot,
       heading: spot.yaw,
       // Le virage part vers le télésiège : les skis pivotent du même côté, le corps se couche à l'intérieur.
-      yaw: spot.yaw + SLIDE_ANGLE * slide,
+      yaw: spot.yaw + angle,
       tilt: 0,
       slide,
-      // Négatif : il se couche à l'opposé de sa glisse, sur ses carres amont.
-      lean: -SLIDE_LEAN * slide * Math.sqrt(momentum),
+      backward,
+      headYaw,
+      lean: -against * Math.sin(angle),
+      pitch: against * Math.cos(angle),
       crouch: SLIDE_CROUCH * slide,
       spray: slide * momentum,
     }

@@ -1,7 +1,7 @@
 import * as THREE from 'three'
 import type { Sample, SimulationResult } from '../physics/types'
 import { type Chairlift, buildChairlift } from './chairlift'
-import { type BodyPose, ridePose } from './choreography'
+import { type BodyPose, ridePose, withSwitchLook } from './choreography'
 import {
   type EpiloguePhase,
   type EpiloguePlan,
@@ -54,17 +54,34 @@ export interface LiftRide {
   readonly skid: THREE.Mesh | null
 }
 
+/** Part de la rotation de la tête que les épaules accompagnent. */
+const SHOULDERS_FOLLOW = 0.3
+
+/** Regard du skieur debout, hors de l'axe de ses skis. */
+export interface StandingLook {
+  /** Part du regard par-dessus l'épaule de la glisse en switch, de 0 à 1. */
+  readonly backward: number
+  /** Tête tournée vers sa glisse, en radians. */
+  readonly headYaw: number
+}
+
+const LOOKING_AHEAD: StandingLook = { backward: 0, headYaw: 0 }
+
 /**
  * Posture du skieur entre debout sur ses skis (0) et assis sur le siège (1). `crouch` ajoute la
- * flexion d'un freinage en dérapage : il s'écrase sur ses jambes pour encaisser.
+ * flexion d'un freinage en dérapage : il s'écrase sur ses jambes pour encaisser. `look` tourne sa
+ * tête et ses épaules tant qu'il est debout.
  */
-export function seatedPosture(seated: number, crouch = 0): BodyPose {
-  const standing = ridePose((CRUISE_FLEX + crouch) * (1 - seated))
+export function seatedPosture(seated: number, crouch = 0, look: StandingLook = LOOKING_AHEAD): BodyPose {
+  const upright = 1 - seated
+  const standing = withSwitchLook(ridePose((CRUISE_FLEX + crouch) * upright), look.backward * upright)
   return {
     ...standing,
     tuck: SEATED_TUCK * seated,
     lean: SEATED_LEAN * seated,
-    arms: { ...standing.arms, ride: 1 - seated, knees: seated },
+    headYaw: standing.headYaw + look.headYaw * upright,
+    twist: standing.twist + look.headYaw * SHOULDERS_FOLLOW * upright,
+    arms: { ...standing.arms, ride: upright, knees: seated },
   }
 }
 
@@ -74,11 +91,14 @@ export function seatOffset(): SeatOffset {
   return { forward: pelvis.x, up: pelvis.y - SEAT_PADDING }
 }
 
-/** Construit le télésiège de la piste simulée et prépare la remontée qui suit la descente. */
-export function buildLiftRide(result: SimulationResult): LiftRide {
+/**
+ * Construit le télésiège de la piste simulée et prépare la remontée qui suit la descente.
+ * `arrivesSwitch` : le skieur finit-il la descente en arrière ?
+ */
+export function buildLiftRide(result: SimulationResult, arrivesSwitch = false): LiftRide {
   const shape = buildCourseShape(result.terrain)
   const line = buildLiftLine(shape)
-  const plan = planEpilogue(shape, line, result.samples, seatOffset())
+  const plan = planEpilogue(shape, line, result.samples, seatOffset(), arrivesSwitch)
   const chairlift = buildChairlift(line)
   const skid = skidMark(plan)
   if (skid) chairlift.object.add(skid)

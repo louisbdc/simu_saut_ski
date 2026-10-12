@@ -10,12 +10,16 @@ import { buildCourseShape, surfaceHeightAt } from './terrainShape'
 
 const SEAT = { forward: 0.35, up: 0.5 }
 
-function epilogueFor(config: LineConfig) {
+function epilogueFor(config: LineConfig, arrivesSwitch = false) {
   const result = simulate(config)
   const shape = buildCourseShape(result.terrain)
   const lift = buildLiftLine(shape)
-  return { result, shape, lift, plan: planEpilogue(shape, lift, result.samples, SEAT) }
+  return { result, shape, lift, plan: planEpilogue(shape, lift, result.samples, SEAT, arrivesSwitch) }
 }
+
+/** Angle des skis par rapport à la glisse, de -π à π : 0 = dans l'axe, ±π = en arrière. */
+const skiAngle = (state: { yaw: number; heading: number }): number =>
+  Math.atan2(Math.sin(state.yaw - state.heading), Math.cos(state.yaw - state.heading))
 
 const hard = epilogueFor(tuneLine(DEFAULT_LINE))
 const wtf = epilogueFor(tuneLine(buildScenario('wtf').config))
@@ -24,6 +28,105 @@ const stalled = epilogueFor({
   ...DEFAULT_LINE,
   kickers: [{ ...DEFAULT_LINE.kickers[0], inrunLength: 2, inrunAngleDeg: 2 }],
   rider: { ...DEFAULT_LINE.rider, startSpeed: 0.5 },
+})
+
+const STALLED_LINE: LineConfig = {
+  ...DEFAULT_LINE,
+  kickers: [{ ...DEFAULT_LINE.kickers[0], inrunLength: 2, inrunAngleDeg: 2 }],
+  rider: { ...DEFAULT_LINE.rider, startSpeed: 0.5 },
+}
+
+describe('sortie après une réception en switch', () => {
+  const backward = epilogueFor(tuneLine(DEFAULT_LINE), true)
+  const approach = (plan: typeof backward.plan) =>
+    Array.from({ length: 1200 }, (_, i) => epilogueAt(plan, (i / 1199) * plan.approachEnd))
+  /** Appui du corps dans l'axe de sa glisse, en radians : négatif = couché à l'opposé de sa glisse. */
+  const leanAlongTravel = (state: ReturnType<typeof epilogueAt>): number =>
+    state.lean * Math.sin(skiAngle(state)) - state.pitch * Math.cos(skiAngle(state))
+
+  test('reprend le skieur dos à sa glisse, regard par-dessus l’épaule', () => {
+    const start = epilogueAt(backward.plan, 0)
+
+    expect(Math.cos(skiAngle(start))).toBeCloseTo(-1, 2)
+    expect(start.backward).toBe(1)
+    expect(start.headYaw).toBeCloseTo(0)
+  })
+
+  test('ne tourne pas sur lui-même : il reste face à la montée pendant que sa trajectoire fait demi-tour', () => {
+    approach(backward.plan).forEach((state, i) => {
+      expect(Math.cos(state.yaw), `tourne le dos à la montée à l'image ${i}`).toBeLessThan(-0.3)
+    })
+  })
+
+  test('commence à freiner en arrière, puis passe en travers et finit de face', () => {
+    const states = approach(backward.plan)
+    const braking = states.filter((state) => state.slide > 0.3)
+    const sideways = states.reduce((best, state) => (state.slide > best.slide ? state : best))
+
+    expect(Math.cos(skiAngle(braking[0]))).toBeLessThan(-0.7)
+    expect(sideways.slide).toBeGreaterThan(0.95)
+    expect(Math.abs(Math.sin(skiAngle(sideways)))).toBeGreaterThan(0.9)
+    expect(Math.cos(skiAngle(braking[braking.length - 1]))).toBeGreaterThan(0.5)
+  })
+
+  test('pivote sans à-coup du début à la fin du freinage', () => {
+    const states = approach(backward.plan)
+    const step = (from: number, to: number): number => Math.abs(Math.atan2(Math.sin(to - from), Math.cos(to - from)))
+    states.slice(1).forEach((state, i) => {
+      // Le chemin est une ligne brisée dont le cap avance par crans : le skieur n'y ajoute aucun à-coup.
+      const allowed = step(states[i].heading, state.heading) + 0.02
+      expect(step(states[i].yaw, state.yaw), `à-coup à l'image ${i + 1}`).toBeLessThan(allowed)
+    })
+  })
+
+  test('s’appuie toujours à l’opposé de sa glisse : vers ses spatules en arrière, de côté en travers', () => {
+    const states = approach(backward.plan)
+    const reversed = states.find((state) => state.slide > 0.3)
+    const sideways = states.reduce((best, state) => (state.slide > best.slide ? state : best))
+
+    expect(reversed).toBeDefined()
+    if (!reversed) return
+    expect(reversed.pitch).toBeLessThan(-0.08)
+    expect(leanAlongTravel(reversed)).toBeLessThan(-0.1)
+    expect(leanAlongTravel(sideways)).toBeLessThan(-0.25)
+    expect(Math.abs(sideways.pitch)).toBeLessThan(0.15)
+  })
+
+  test('regarde où il va tant qu’il lui tourne le dos', () => {
+    const states = approach(backward.plan)
+    const reversed = states.filter((state) => Math.cos(skiAngle(state)) < -0.3 && state.backward === 0)
+
+    expect(reversed.length).toBeGreaterThan(5)
+    // Sa glisse est du côté opposé à l'angle de ses skis : la tête tourne de ce côté-là.
+    reversed.forEach((state) => expect(state.headYaw * skiAngle(state)).toBeLessThan(-1))
+  })
+
+  test('arrive au portillon de face, comme après une réception normale', () => {
+    const arrived = epilogueAt(backward.plan, backward.plan.approachEnd)
+
+    expect(skiAngle(arrived)).toBeCloseTo(0)
+    expect(arrived.backward).toBe(0)
+    expect(arrived.headYaw).toBeCloseTo(0)
+    expect(arrived.slide).toBeCloseTo(0)
+    expect(arrived.pitch).toBeCloseTo(0)
+  })
+
+  test('se retourne aussi quand il arrive sans élan, sans déraper', () => {
+    const { plan } = epilogueFor(STALLED_LINE, true)
+    const states = approach(plan)
+
+    expect(Math.cos(skiAngle(states[0]))).toBeCloseTo(-1, 2)
+    expect(skiAngle(states[states.length - 1])).toBeCloseTo(0)
+    states.forEach((state) => expect(state.slide).toBe(0))
+  })
+
+  test('ne change rien au regard d’une arrivée de face', () => {
+    const { plan } = epilogueFor(tuneLine(DEFAULT_LINE))
+    approach(plan).forEach((state) => {
+      expect(state.backward).toBe(0)
+      expect(state.headYaw).toBe(0)
+    })
+  })
 })
 
 describe('remontée en télésiège', () => {

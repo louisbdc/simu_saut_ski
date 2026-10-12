@@ -524,9 +524,10 @@ function frameLift(ride: LiftRide, sinceHandover: number, elapsed: number): void
   const sample = liftSample(state, playback.time, result.reports.length - 1)
   const focus = new THREE.Vector3(state.x, state.y + 1, state.z)
   skier.pose(sample, null, false, null, elapsed, {
-    posture: seatedPosture(state.seated, state.crouch, state.backward),
+    posture: seatedPosture(state.seated, state.crouch, state),
     yaw: state.yaw,
     lean: state.lean,
+    pitch: state.pitch,
     z: state.z,
   })
   if (playback.playing && state.spray > 0) {
@@ -547,7 +548,7 @@ function frameLift(ride: LiftRide, sinceHandover: number, elapsed: number): void
   trackLight(stage, focus)
   stage.renderer.render(stage.scene, stage.camera)
 
-  updateLive(sample, null, state.backward > 0.5, liftLabel(state))
+  updateLive(sample, null, Math.cos(state.yaw - state.heading) < 0, liftLabel(state))
   chart.draw(result.samples[result.samples.length - 1].x)
 }
 
